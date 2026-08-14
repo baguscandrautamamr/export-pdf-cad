@@ -46,17 +46,28 @@ Default demo account:
 | Email / username | `user` |
 | Password | `user` |
 
-`.env.local.example` already ships this account as `DEMO_USER_EMAIL=user` plus the
-matching bcrypt hash. If both variables are left empty, `npm run dev` still
-accepts `user` / `user` through a fallback in `lib/auth.ts` — but only outside
-production, so a deployed build cannot silently inherit a password published in
-this repository. In production, both variables are required.
+Under `npm run dev` this account works **always** — whatever `.env.local` says,
+even if it is missing, stale or broken. That is deliberate: a wrong
+`DEMO_USER_*` value should never lock you out of your own dev server.
 
-To change the password:
+`NODE_ENV=production` (i.e. `npm run build && npm start`, and every real
+deployment) **refuses** it and accepts only the account from the environment, so
+a password published in this repository can never authenticate a deployed app.
+
+Any account you configure in `.env.local` keeps working alongside it;
+`.env.local.example` ships `DEMO_USER_EMAIL=user` plus the matching hash. To
+change the password:
 
 ```bash
 node scripts/hash-password.js "new-password"
 # paste the printed DEMO_USER_PASSWORD_HASH line into .env.local
+```
+
+If a login is rejected and you want to know why:
+
+```bash
+npm run check-login              # what the server actually sees
+npm run check-login -- "secret"  # also test one password against the hash
 ```
 
 The username field is a plain text input, not `type="email"`, so a bare username
