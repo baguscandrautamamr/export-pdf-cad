@@ -19,6 +19,7 @@ loadEnvConfig(process.cwd(), true);
 const BCRYPT = /^\$2[aby]?\$\d{2}\$/;
 const email = process.env.DEMO_USER_EMAIL?.trim();
 const hash = process.env.DEMO_USER_PASSWORD_HASH?.trim();
+const plain = process.env.DEMO_USER_PASSWORD;
 const envPath = path.join(process.cwd(), ".env.local");
 
 const line = (k, v) => console.log(`  ${k.padEnd(28)} ${v}`);
@@ -30,14 +31,16 @@ line(
   "DEMO_USER_PASSWORD_HASH",
   !hash ? "(kosong)" : BCRYPT.test(hash) ? `terbaca (${hash.slice(0, 7)}...)` : `RUSAK: "${hash}"`
 );
+line("DEMO_USER_PASSWORD", plain ? "terisi (teks biasa)" : "(kosong)");
 
-const usable = !!email && !!hash && BCRYPT.test(hash);
+const hashOk = !!hash && BCRYPT.test(hash);
+const usable = !!email && (hashOk || !!plain);
 
 console.log("\nBISA LOGIN DENGAN\n");
 if (usable) {
-  line(`${email} / <kata sandi Anda>`, "dari .env.local");
+  line(`${email} / <kata sandi Anda>`, hashOk ? "dari hash bcrypt" : "dari DEMO_USER_PASSWORD");
 } else {
-  line("(akun .env.local)", "tidak aktif - konfigurasi belum lengkap/rusak");
+  line("(akun environment)", "tidak aktif - konfigurasi belum lengkap/rusak");
 }
 line("user / user", "hanya di npm run dev, ditolak di production");
 
@@ -55,8 +58,12 @@ const probe = process.argv[2];
 if (probe) {
   console.log("\nUJI KATA SANDI\n");
   line(
-    `cocok dengan hash .env.local?`,
-    usable ? (bcrypt.compareSync(probe, hash) ? "YA" : "TIDAK") : "tidak bisa diuji"
+    "cocok dengan hash bcrypt?",
+    hashOk ? (bcrypt.compareSync(probe, hash) ? "YA" : "TIDAK") : "tidak ada hash"
+  );
+  line(
+    "cocok dengan DEMO_USER_PASSWORD?",
+    plain ? (probe === plain ? "YA" : "TIDAK") : "tidak diset"
   );
   line("cocok dengan akun dev?", probe === "user" ? "YA (username: user)" : "TIDAK");
 }

@@ -54,14 +54,22 @@ even if it is missing, stale or broken. That is deliberate: a wrong
 deployment) **refuses** it and accepts only the account from the environment, so
 a password published in this repository can never authenticate a deployed app.
 
-Any account you configure in `.env.local` keeps working alongside it;
-`.env.local.example` ships `DEMO_USER_EMAIL=user` plus the matching hash. To
-change the password:
+Any account you configure keeps working alongside it. There are two ways to
+configure one — pick either:
 
 ```bash
+# 1. Plaintext. No hashing, and the only option that needs no extra step.
+DEMO_USER_EMAIL=user
+DEMO_USER_PASSWORD=user
+
+# 2. bcrypt hash. Stronger, and what you want for anything real.
 node scripts/hash-password.js "new-password"
 # paste the printed DEMO_USER_PASSWORD_HASH line into .env.local
 ```
+
+A valid `DEMO_USER_PASSWORD_HASH` always wins and makes `DEMO_USER_PASSWORD`
+inert, so a leftover plaintext value can never become a second accepted
+password.
 
 If a login is rejected and you want to know why:
 
@@ -83,7 +91,8 @@ like `user` is accepted alongside a real email address.
 | `NEXTAUTH_SECRET` | `openssl rand -base64 32` |
 | `NEXTAUTH_URL` | `http://localhost:3000`, production domain when deployed |
 | `DEMO_USER_EMAIL` | Demo login email/username (example ships `user`) |
-| `DEMO_USER_PASSWORD_HASH` | bcrypt hash from `scripts/hash-password.js`; escape `$` as `\$` in `.env.local` |
+| `DEMO_USER_PASSWORD` | Plaintext password. Simplest option, no hashing. Ignored when a valid hash is set |
+| `DEMO_USER_PASSWORD_HASH` | bcrypt hash from `scripts/hash-password.js`; escape `$` as `\$` in `.env.local`. Takes precedence over `DEMO_USER_PASSWORD` |
 | `PYTHON_BIN` | Optional, Python interpreter for `/api/generate` (default `python3`) |
 | `INTERNAL_API_SECRET` | Shared secret between `/api/generate` and the Python function. Required wherever the Python side runs out-of-process (Vercel included) |
 | `PYTHON_SERVICE_URL` | Optional. URL of the Python builder when it is deployed as its own service. Unset on Vercel — the route defaults to `/api/build` in the same deployment |
@@ -164,18 +173,22 @@ openssl rand -hex 32              # copy the output
 vercel env add INTERNAL_API_SECRET production   # paste the value above
 vercel env add NEXTAUTH_SECRET production       # openssl rand -base64 32
 vercel env add NEXTAUTH_URL production          # https://<your-domain>
-vercel env add DEMO_USER_EMAIL production
-vercel env add DEMO_USER_PASSWORD_HASH production   # RAW hash, no \$ escaping
+vercel env add DEMO_USER_EMAIL production           # e.g. user
+vercel env add DEMO_USER_PASSWORD production        # e.g. user (plaintext, no hashing)
 vercel env add OLAGON_API_KEY production
 
 vercel --prod
 ```
 
-Two things that bite:
+Things that bite:
 
-- **Paste the raw bcrypt hash** into `vercel env`, without the `\$` escaping that
-  `.env.local` needs — dashboard and CLI values are stored literally.
 - `NEXTAUTH_URL` must match the deployed domain, or sign-in redirects break.
+- If you use `DEMO_USER_PASSWORD_HASH` instead, paste the **raw** hash without
+  the `\$` escaping that `.env.local` needs — dashboard and CLI values are
+  stored literally.
+- A deployed site whose password is `user` is open to anyone who finds the URL.
+  Fine for a demo; give it a real password before any client document goes
+  through it.
 
 `PYTHON_SERVICE_URL` is not needed on Vercel: the route defaults to `/api/build`
 in the same deployment. Set it only when the Python side is deployed elsewhere

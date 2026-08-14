@@ -1,6 +1,16 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
+import { createHash, timingSafeEqual as nodeTimingSafeEqual } from "node:crypto";
+
+/** Constant-time compare for the plaintext password path. */
+function timingSafeEqual(a: string, b: string): boolean {
+  // Compare digests rather than the strings: equal-length buffers, so neither
+  // the password's content nor its length leaks through timing.
+  const da = createHash("sha256").update(a, "utf8").digest();
+  const db = createHash("sha256").update(b, "utf8").digest();
+  return nodeTimingSafeEqual(da, db);
+}
 
 /**
  * Built-in demo account, accepted only outside production.
@@ -47,6 +57,7 @@ export const authOptions: NextAuthOptions = {
 
         const demoEmail = process.env.DEMO_USER_EMAIL?.trim().toLowerCase();
         const demoHash = process.env.DEMO_USER_PASSWORD_HASH?.trim();
+        const demoPlain = process.env.DEMO_USER_PASSWORD;
         // A configured hash that is not a bcrypt string is almost always the
         // dotenv-expand trap, not a typo. Treat it as unconfigured and say so.
         const hashUsable = !!demoHash && /^\$2[aby]?\$\d{2}\$/.test(demoHash);
@@ -58,18 +69,24 @@ export const authOptions: NextAuthOptions = {
               "(jalankan: npm run check-login)"
           );
         }
-        if (!demoEmail || !hashUsable) {
+        if (!demoEmail || !(hashUsable || demoPlain)) {
           if (isProduction()) {
             throw new Error(
-              "DEMO_USER_EMAIL / DEMO_USER_PASSWORD_HASH belum diset dengan benar di environment"
+              "DEMO_USER_EMAIL belum diset, atau DEMO_USER_PASSWORD / " +
+                "DEMO_USER_PASSWORD_HASH belum diset dengan benar di environment"
             );
           }
         }
 
-        if (demoEmail && hashUsable && email === demoEmail) {
-          if (await bcrypt.compare(password, demoHash!)) {
-            return { id: "demo-user", email: demoEmail, name: "Demo User" };
-          }
+        if (demoEmail && email === demoEmail) {
+          // A usable hash wins outright. DEMO_USER_PASSWORD is deliberately
+          // ignored then, so a weak plaintext value left over in the
+          // environment can never sit alongside a strong hash as a second
+          // accepted password.
+          const ok = hashUsable
+            ? await bcrypt.compare(password, demoHash!)
+            : !!demoPlain && timingSafeEqual(password, demoPlain);
+          if (ok) return { id: "demo-user", email: demoEmail, name: "Demo User" };
         }
 
         // Built-in dev account, checked after the configured one so a real
