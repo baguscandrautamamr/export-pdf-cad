@@ -1,0 +1,47 @@
+{
+  "app.title": "Panel Schedule Generator",
+  "app.tagline": "Equipment schedule → panel schedule + single line diagram",
+
+  "nav.signOut": "Keluar",
+  "nav.theme.light": "Terang",
+  "nav.theme.dark": "Gelap",
+
+  "login.title": "Masuk",
+  "login.subtitle": "Masuk untuk mulai membuat panel schedule",
+  "login.email": "Email",
+  "login.password": "Kata sandi",
+  "login.submit": "Masuk",
+  "login.loading": "Memproses…",
+  "login.error": "Email atau kata sandi salah",
+
+  "home.heading": "Buat Panel Schedule",
+  "home.subheading": "Unggah equipment schedule, periksa hasil ekstraksi, lalu generate berkas.",
+
+  "step.1.title": "1. Unggah dokumen",
+  "step.1.desc": "PDF atau foto equipment schedule. Maksimal 15 MB.",
+  "step.1.choose": "Pilih berkas",
+  "step.1.extract": "Ekstrak dengan AI",
+  "step.1.extracting": "Mengekstrak…",
+  "step.1.noFile": "Belum ada berkas dipilih",
+  "step.1.skip": "atau mulai dari contoh data",
+  "step.1.useExample": "Muat contoh",
+
+  "step.2.title": "2. Periksa & perbaiki data",
+  "step.2.desc": "Wajib diperiksa manual. Perhatikan satuan kW/watt, qty, dan phase sebelum generate.",
+  "step.2.invalidJson": "JSON tidak valid",
+  "step.2.validJson": "JSON valid",
+  "step.2.circuits": "baris load",
+  "step.2.format": "Rapikan JSON",
+
+  "step.3.title": "3. Generate berkas",
+  "step.3.desc": "Menghasilkan Excel panel schedule, DXF, dan pratinjau PDF.",
+  "step.3.generate": "Generate",
+  "step.3.generating": "Memproses…",
+  "step.3.summary": "Ringkasan perhitungan",
+  "step.3.files": "Berkas hasil",
+  "step.3.download": "Unduh",
+
+  "warnings.title": "Perlu diverifikasi",
+  "error.title": "Gagal",
+  "common.dismiss": "Tutup"
+}

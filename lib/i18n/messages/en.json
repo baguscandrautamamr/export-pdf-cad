@@ -1,0 +1,47 @@
+{
+  "app.title": "Panel Schedule Generator",
+  "app.tagline": "Equipment schedule → panel schedule + single line diagram",
+
+  "nav.signOut": "Sign out",
+  "nav.theme.light": "Light",
+  "nav.theme.dark": "Dark",
+
+  "login.title": "Sign in",
+  "login.subtitle": "Sign in to start building panel schedules",
+  "login.email": "Email",
+  "login.password": "Password",
+  "login.submit": "Sign in",
+  "login.loading": "Working…",
+  "login.error": "Wrong email or password",
+
+  "home.heading": "Build a panel schedule",
+  "home.subheading": "Upload an equipment schedule, review the extracted data, then generate the files.",
+
+  "step.1.title": "1. Upload document",
+  "step.1.desc": "PDF or photo of the equipment schedule. 15 MB max.",
+  "step.1.choose": "Choose file",
+  "step.1.extract": "Extract with AI",
+  "step.1.extracting": "Extracting…",
+  "step.1.noFile": "No file selected",
+  "step.1.skip": "or start from sample data",
+  "step.1.useExample": "Load sample",
+
+  "step.2.title": "2. Review & fix the data",
+  "step.2.desc": "Manual review is required. Check kW/watt units, quantity and phase before generating.",
+  "step.2.invalidJson": "Invalid JSON",
+  "step.2.validJson": "Valid JSON",
+  "step.2.circuits": "load rows",
+  "step.2.format": "Format JSON",
+
+  "step.3.title": "3. Generate files",
+  "step.3.desc": "Produces the Excel panel schedule, the DXF and a PDF preview.",
+  "step.3.generate": "Generate",
+  "step.3.generating": "Working…",
+  "step.3.summary": "Calculation summary",
+  "step.3.files": "Output files",
+  "step.3.download": "Download",
+
+  "warnings.title": "Needs verification",
+  "error.title": "Failed",
+  "common.dismiss": "Dismiss"
+}

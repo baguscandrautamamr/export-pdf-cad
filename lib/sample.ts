@@ -1,0 +1,61 @@
+import type { LoadsFile } from "@/types/loads";
+
+/**
+ * A real, complete input file — useful for exercising the generate step without
+ * spending a gateway call, and as a worked example of the schema.
+ */
+export const SAMPLE_LOADS: LoadsFile = {
+  panel: {
+    name: "PP-HVAC E_RAW MATERIAL",
+    ip: "IP 42",
+    location: "RAW MATERIAL WAREHOUSE",
+    reference: "ME-E-AC-7001 REV.0",
+    project: "NAMA PROYEK",
+    site: "LOKASI SITE",
+    source: "MDP",
+    drawing_no: "SLD-PP-HVAC-01",
+    rev: "0",
+    date: "14-08-2026",
+    group: "HVAC",
+  },
+  system: {
+    voltage_ll: 400,
+    voltage_ln: 230,
+    pf: 0.8,
+    ambient_c: 40,
+    cable_length_m: 100,
+    spare_percent: 20,
+    spare_circuits: 3,
+    vd_limit: 0.04,
+    min_mcb_1p: 16,
+  },
+  loads: [
+    { tag: "IU E-001", desc: "LABEL STORAGE (E-004)", watt: 300, phase: 1, qty: 2 },
+    { tag: "IU E-002", desc: "SUPERVISOR (E-010)", watt: 15, phase: 1 },
+    { tag: "IU E-003", desc: "LOCKER ROOM (E-058)", watt: 66, phase: 1 },
+    { tag: "IU E-004", desc: "DRIVER ROOM (E-006)", watt: 111, phase: 1 },
+    { tag: "IU E-005", desc: "WAREHOUSE COUNTER OFF. (E-009)", watt: 111, phase: 1 },
+    { tag: "IU E-101", desc: "MEETING ROOM (E-105)", watt: 111, phase: 1 },
+    { tag: "IU E-102", desc: "PANTRY (E-104)", watt: 66, phase: 1 },
+    { tag: "IU E-103", desc: "ARCHIVE ROOM (E-103)", watt: 66, phase: 1 },
+    { tag: "IU E-104", desc: "OFFICE (E-057)", watt: 111, phase: 1 },
+    { tag: "IU E-105", desc: "SUPERVISOR ROOM (E-056)", watt: 66, phase: 1 },
+    { tag: "IU E-106", desc: "MANAGER OFFICE 1 (E-101)", watt: 66, phase: 1 },
+    { tag: "IU E-107", desc: "MANAGER OFFICE 2 (E-102)", watt: 66, phase: 1 },
+    { tag: "OU E-001.M1", desc: "OUTDOOR UNIT MODULE 1", watt: 12820, phase: 3, motor: true },
+    { tag: "OU E-001.M2", desc: "OUTDOOR UNIT MODULE 2", watt: 7610, phase: 3, motor: true },
+    {
+      tag: "EF E-001",
+      desc: "ROOF FAN RAW MATERIAL WHSE",
+      watt: 11000,
+      phase: 3,
+      qty: 15,
+      motor: true,
+      remark: "DOL / SOFT START",
+    },
+    { tag: "EF E-002", desc: "TOILET / JANITOR (E-007,8,11,12)", watt: 1000, phase: 1 },
+    { tag: "EF E-003", desc: "LOCKER ROOM (E-058)", watt: 200, phase: 1 },
+    { tag: "EF E-101", desc: "PANTRY (E-104)", watt: 200, phase: 1 },
+    { tag: "EF E-102", desc: "ARCHIVE ROOM (E-103)", watt: 200, phase: 1 },
+  ],
+};
