@@ -2,6 +2,9 @@ import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 
+/** Credentials used only when nothing is configured and we are not in production. */
+const DEV_FALLBACK = { email: "user", password: "user" };
+
 /**
  * Demo single-user auth: the one account lives in env vars.
  *
@@ -31,11 +34,23 @@ export const authOptions: NextAuthOptions = {
 
         const demoEmail = process.env.DEMO_USER_EMAIL?.trim().toLowerCase();
         const demoHash = process.env.DEMO_USER_PASSWORD_HASH;
+
+        // Nothing configured: fall back to user/user so a fresh clone can log in
+        // with `npm run dev` alone. Deliberately dev-only — a build running in
+        // production must state its credentials explicitly rather than inherit a
+        // password that is published in this repository.
         if (!demoEmail || !demoHash) {
-          throw new Error(
-            "DEMO_USER_EMAIL / DEMO_USER_PASSWORD_HASH belum diset di environment"
-          );
+          if (process.env.NODE_ENV === "production") {
+            throw new Error(
+              "DEMO_USER_EMAIL / DEMO_USER_PASSWORD_HASH belum diset di environment"
+            );
+          }
+          if (email !== DEV_FALLBACK.email || password !== DEV_FALLBACK.password) {
+            return null;
+          }
+          return { id: "demo-user", email: DEV_FALLBACK.email, name: "Demo User" };
         }
+
         if (email !== demoEmail) return null;
         if (!(await bcrypt.compare(password, demoHash))) return null;
 

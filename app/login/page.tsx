@@ -41,11 +41,15 @@ function LoginForm() {
       <form onSubmit={onSubmit}>
         <div className="field">
           <label htmlFor="email">{t("login.email")}</label>
+          {/* type="text", not "email": the demo account is a bare username
+              ("user"), which the browser's email validation would reject. */}
           <input
             id="email"
             className="glass-input"
-            type="email"
+            type="text"
             autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}

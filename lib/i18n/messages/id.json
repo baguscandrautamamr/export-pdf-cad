@@ -8,7 +8,7 @@
 
   "login.title": "Masuk",
   "login.subtitle": "Masuk untuk mulai membuat panel schedule",
-  "login.email": "Email",
+  "login.email": "Email / username",
   "login.password": "Kata sandi",
   "login.submit": "Masuk",
   "login.loading": "Memproses…",

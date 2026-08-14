@@ -27,8 +27,7 @@ mix-ups, ambiguous per-unit vs total, motors marked as non-motors).
 npm install
 cp .env.local.example .env.local
 # fill OLAGON_API_KEY
-# NEXTAUTH_SECRET:          openssl rand -base64 32
-# DEMO_USER_PASSWORD_HASH:  node scripts/hash-password.js "your-password"
+# NEXTAUTH_SECRET:  openssl rand -base64 32
 
 pip install -r python/requirements.txt --break-system-packages
 
@@ -37,6 +36,31 @@ npm run dev
 
 Open http://localhost:3000 → redirected to `/login` → sign in → upload → review →
 generate → download.
+
+### Login
+
+Default demo account:
+
+| Field | Value |
+|---|---|
+| Email / username | `user` |
+| Password | `user` |
+
+`.env.local.example` already ships this account as `DEMO_USER_EMAIL=user` plus the
+matching bcrypt hash. If both variables are left empty, `npm run dev` still
+accepts `user` / `user` through a fallback in `lib/auth.ts` — but only outside
+production, so a deployed build cannot silently inherit a password published in
+this repository. In production, both variables are required.
+
+To change the password:
+
+```bash
+node scripts/hash-password.js "new-password"
+# paste the printed DEMO_USER_PASSWORD_HASH line into .env.local
+```
+
+The username field is a plain text input, not `type="email"`, so a bare username
+like `user` is accepted alongside a real email address.
 
 ## Environment variables
 
@@ -47,8 +71,8 @@ generate → download.
 | `OLAGON_MODEL` | Default `claude-sonnet-4-6` |
 | `NEXTAUTH_SECRET` | `openssl rand -base64 32` |
 | `NEXTAUTH_URL` | `http://localhost:3000`, production domain when deployed |
-| `DEMO_USER_EMAIL` | Demo login email |
-| `DEMO_USER_PASSWORD_HASH` | bcrypt hash from `scripts/hash-password.js` |
+| `DEMO_USER_EMAIL` | Demo login email/username (example ships `user`) |
+| `DEMO_USER_PASSWORD_HASH` | bcrypt hash from `scripts/hash-password.js`; escape `$` as `\$` in `.env.local` |
 | `PYTHON_BIN` | Optional, Python interpreter for `/api/generate` (default `python3`) |
 
 ## `loads.json` contract

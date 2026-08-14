@@ -8,7 +8,7 @@
 
   "login.title": "Sign in",
   "login.subtitle": "Sign in to start building panel schedules",
-  "login.email": "Email",
+  "login.email": "Email / username",
   "login.password": "Password",
   "login.submit": "Sign in",
   "login.loading": "Working…",
