@@ -47,6 +47,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "loads harus berisi minimal satu item" }, { status: 400 });
   }
 
+  // Vercel's Node runtime has no python3, so there the builders live in a
+  // separate function (api/build.py) and this route only proxies to it. The
+  // same path serves a self-hosted Python service: point PYTHON_SERVICE_URL at
+  // it and nothing else changes.
+  const serviceUrl = pythonServiceUrl();
+  if (serviceUrl) {
+    return proxyToPythonService(serviceUrl, loads);
+  }
+
   const tmpdir = await fs.mkdtemp(path.join(os.tmpdir(), "panel-"));
   try {
     const input = path.join(tmpdir, "loads.json");
@@ -97,12 +106,67 @@ export async function POST(req: Request) {
   }
 }
 
+/**
+ * Where the Python builders live, or null when this process can run them itself.
+ *
+ * An explicit PYTHON_SERVICE_URL always wins (option 2: Python deployed as its
+ * own service). On Vercel with nothing set, default to the sibling function in
+ * this same deployment, whose host is only known at request time.
+ */
+function pythonServiceUrl(): string | null {
+  const explicit = process.env.PYTHON_SERVICE_URL?.trim();
+  if (explicit) return explicit;
+  if (!process.env.VERCEL) return null;
+  const host = process.env.VERCEL_URL;
+  return host ? `https://${host}/api/build` : null;
+}
+
+async function proxyToPythonService(url: string, loads: LoadsFile) {
+  const secret = process.env.INTERNAL_API_SECRET;
+  if (!secret) {
+    return NextResponse.json(
+      {
+        error:
+          "INTERNAL_API_SECRET belum diset. Endpoint Python menolak permintaan tanpa secret ini (lihat README bagian Deploy).",
+      },
+      { status: 500 }
+    );
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-internal-secret": secret },
+      body: JSON.stringify({ loads }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { error: `Tidak bisa menghubungi service Python di ${url}: ${describe(err)}` },
+      { status: 502 }
+    );
+  }
+
+  const text = await res.text();
+  try {
+    // Pass the upstream status through so a 400 stays a 400 rather than
+    // becoming an opaque 502.
+    return NextResponse.json(JSON.parse(text), { status: res.status });
+  } catch {
+    return NextResponse.json(
+      { error: `Service Python membalas non-JSON (HTTP ${res.status}): ${text.slice(0, 300)}` },
+      { status: 502 }
+    );
+  }
+}
+
 function describe(err: unknown): string {
   const e = err as NodeJS.ErrnoException & { stderr?: string; killed?: boolean };
   if (e?.code === "ENOENT") {
-    return `'${PYTHON}' tidak ditemukan. Endpoint ini butuh Python 3 + dependensi di python/requirements.txt (lihat README: runtime serverless Vercel tidak menyediakan python3).`;
+    return `'${PYTHON}' tidak ditemukan. Jalankan 'pip install -r python/requirements.txt', atau set PYTHON_SERVICE_URL kalau builder Python berjalan sebagai service terpisah (lihat README bagian Deploy).`;
   }
-  if (e?.killed) return "Script Python melebihi batas waktu";
+  if (e?.killed || e?.name === "TimeoutError") return "Script Python melebihi batas waktu";
   const stderr = e?.stderr?.trim();
   if (stderr) return `Script Python gagal: ${stderr.split("\n").slice(-6).join("\n")}`;
   return err instanceof Error ? err.message : "Generate gagal";

@@ -85,6 +85,8 @@ like `user` is accepted alongside a real email address.
 | `DEMO_USER_EMAIL` | Demo login email/username (example ships `user`) |
 | `DEMO_USER_PASSWORD_HASH` | bcrypt hash from `scripts/hash-password.js`; escape `$` as `\$` in `.env.local` |
 | `PYTHON_BIN` | Optional, Python interpreter for `/api/generate` (default `python3`) |
+| `INTERNAL_API_SECRET` | Shared secret between `/api/generate` and the Python function. Required wherever the Python side runs out-of-process (Vercel included) |
+| `PYTHON_SERVICE_URL` | Optional. URL of the Python builder when it is deployed as its own service. Unset on Vercel — the route defaults to `/api/build` in the same deployment |
 
 ## `loads.json` contract
 
@@ -137,22 +139,73 @@ python3 python/build_dxf.py  python/loads_example.json ./out
 
 Output names are always `PANEL_SCHEDULE_<sanitised panel name>.{xlsx,dxf,pdf}`.
 
-## ⚠️ Deployment: `/api/generate` needs Python
+## Deploy to Vercel
 
-Vercel's Node.js serverless runtime does **not** provide `python3`. This route
-works under `npm run dev` and on any host with Python available, but will fail on
-a plain Vercel deploy. Three ways out, still undecided:
+Vercel's Node.js runtime has no `python3`, so the builders run as a **separate
+Python serverless function** (`api/build.py`, the `@vercel/python` runtime).
+`/api/generate` stays the front door — it holds the session check — and proxies
+to that function. Locally, with no service URL configured, it still spawns
+`python3` directly, so `npm run dev` is unchanged.
 
-1. Move the Python into a Vercel Python Serverless Function (`@vercel/python`),
-   called from this route over an internal `fetch`.
-2. Deploy `python/` as a separate HTTP service (Railway/Render/Fly.io) and make
-   this route a proxy.
-3. Port `panel_core.py` / `build_xlsx.py` / `build_dxf.py` to TypeScript — most
-   work, simplest single-runtime deploy.
+```
+browser → /api/generate (Node, checks session) → /api/build (Python, builds files)
+```
 
-The route reports a clear error if the interpreter is missing rather than failing
-opaquely, but this decision has to be made before calling generate "done" on
-Vercel.
+### Deploying with the CLI
+
+```bash
+npm i -g vercel
+vercel login
+vercel link                       # once, to create/attach the project
+
+# secret the two functions share; the Python one rejects calls without it
+openssl rand -hex 32              # copy the output
+
+vercel env add INTERNAL_API_SECRET production   # paste the value above
+vercel env add NEXTAUTH_SECRET production       # openssl rand -base64 32
+vercel env add NEXTAUTH_URL production          # https://<your-domain>
+vercel env add DEMO_USER_EMAIL production
+vercel env add DEMO_USER_PASSWORD_HASH production   # RAW hash, no \$ escaping
+vercel env add OLAGON_API_KEY production
+
+vercel --prod
+```
+
+Two things that bite:
+
+- **Paste the raw bcrypt hash** into `vercel env`, without the `\$` escaping that
+  `.env.local` needs — dashboard and CLI values are stored literally.
+- `NEXTAUTH_URL` must match the deployed domain, or sign-in redirects break.
+
+`PYTHON_SERVICE_URL` is not needed on Vercel: the route defaults to `/api/build`
+in the same deployment. Set it only when the Python side is deployed elsewhere
+(option 2 below) — the code path is identical.
+
+### Known risks on Vercel
+
+I have not been able to run the actual Vercel build, so these are unverified:
+
+- **Function size.** `openpyxl + ezdxf + matplotlib` measures ~204 MB installed,
+  against Vercel's 250 MB uncompressed limit. If the build is rejected for size,
+  drop `matplotlib` from `api/requirements.txt` — that saves ~67 MB and
+  `build_dxf.py` already skips the PDF preview gracefully when it is absent, so
+  you still get the xlsx and dxf.
+- **Deployment Protection.** If Vercel Authentication is enabled (the default on
+  preview deployments), the internal call from `/api/generate` to `/api/build`
+  hits the auth wall and fails. Either disable it for the environment, or use
+  Protection Bypass for Automation.
+- **Cold starts.** The Python function imports matplotlib; first request after
+  idle will be slow.
+
+### The other two options
+
+Both remain available without code changes:
+
+2. **Python as its own service** (Railway/Render/Fly.io): deploy `api/build.py` +
+   `python/` there, then set `PYTHON_SERVICE_URL` and `INTERNAL_API_SECRET`. Best
+   if the function size limit becomes a problem.
+3. **Port the builders to TypeScript**: most work, but a single runtime and no
+   inter-function hop.
 
 ## Olagon gateway
 
@@ -173,12 +226,12 @@ Done:
 
 - Next.js 15 App Router + TypeScript
 - NextAuth login (env demo user) + route protection
+- Vercel deploy path for the Python builders (`api/build.py` + proxy)
 - i18n ID/EN, light/dark theme, glassmorphism UI, PWA
 - `/api/extract` and `/api/generate`, manual JSON review before generate
 
 Open:
 
 - Replace the demo login with a real multi-user database
-- Pick a Python deployment strategy for Vercel (three options above)
 - Per-user project history (needs a database)
 - Verify Olagon's ToS & privacy policy

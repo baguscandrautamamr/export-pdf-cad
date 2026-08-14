@@ -191,9 +191,13 @@ def sheet_cable(wb, m):
     return ws
 
 
-def main():
-    cfg = load_config(sys.argv[1])
-    outdir = sys.argv[2] if len(sys.argv) > 2 else '.'
+def make(cfg, outdir='.'):
+    """Write the workbook and return (path, summary line).
+
+    Mirrors build_dxf.make() so a caller that has already parsed loads.json -
+    the serverless function in api/build.py - can produce the file without
+    going back through argv and a subprocess.
+    """
     os.makedirs(outdir, exist_ok=True)
     m = build(cfg)
     wb = openpyxl.Workbook()
@@ -202,10 +206,19 @@ def main():
     sheet_cable(wb, m)
     path = os.path.join(outdir, f"PANEL_SCHEDULE_{safe_name(m['panel'].get('name','PANEL'))}.xlsx")
     wb.save(path)
+    summary = (f"circuits={len(m['rows'])}  total={m['total_w']:,.0f} W  "
+               f"R/S/T={m['phase_w']['R']:,.0f}/{m['phase_w']['S']:,.0f}/{m['phase_w']['T']:,.0f} W  "
+               f"imbalance={m['imbalance']*100:.2f}%  Ib={m['design']:.1f} A  "
+               f"incoming={m['incoming']} A")
+    return path, summary
+
+
+def main():
+    cfg = load_config(sys.argv[1])
+    outdir = sys.argv[2] if len(sys.argv) > 2 else '.'
+    path, summary = make(cfg, outdir)
     print(f"OK  {path}")
-    print(f"    circuits={len(m['rows'])}  total={m['total_w']:,.0f} W  "
-          f"R/S/T={m['phase_w']['R']:,.0f}/{m['phase_w']['S']:,.0f}/{m['phase_w']['T']:,.0f} W  "
-          f"imbalance={m['imbalance']*100:.2f}%  Ib={m['design']:.1f} A  incoming={m['incoming']} A")
+    print(f"    {summary}")
 
 
 if __name__ == '__main__':
