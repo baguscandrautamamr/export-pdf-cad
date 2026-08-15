@@ -96,11 +96,24 @@ export function collectWarnings(data: LoadsFile): string[] {
     return warnings;
   }
 
+  // First, before the per-row detail, because it is the one warning about rows
+  // that are not in the file at all. loads.json holds a single panel, so a
+  // document covering several leaves the rest behind by design — and a count
+  // that looks plausible is exactly how that goes unnoticed.
+  const droppedPanels = data.loads.find((l) => /panel lain/i.test(l?.remark ?? ""));
+  if (droppedPanels) {
+    warnings.push(
+      `Dokumen ini memuat lebih dari satu panel dan hanya SATU yang diekstrak. ` +
+        `${droppedPanels.remark} — ulangi ekstraksi untuk tiap panel, lalu generate terpisah.`
+    );
+  }
+
   data.loads.forEach((l, i) => {
     const where = `Load #${i + 1} (${l?.tag || "tanpa tag"})`;
-    // The prompt asks for both markers, so look for both: AMBIGU for a value
-    // the model had to choose between readings, TIDAK TERBACA for one it could
-    // not find at all.
+    // The markers the prompt asks for: AMBIGU for a value the model had to
+    // choose between readings, TIDAK TERBACA for one it could not find. The
+    // PANEL LAIN marker is deliberately not echoed here — it is about the file
+    // as a whole, and it already leads the list above.
     if (l?.remark && /ambigu|tidak terbaca/i.test(l.remark)) {
       warnings.push(`${where}: ${l.remark}`);
     }

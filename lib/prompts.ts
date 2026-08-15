@@ -93,8 +93,18 @@ ATURAN EKSTRAKSI (patuhi persis, ini sumber kesalahan paling mahal):
    baris-baris di bawahnya. Kalau ragu apakah suatu baris judul atau load, masukkan sebagai
    load dan beri "remark": "AMBIGU: mungkin baris judul, bukan load".
 
-7. Kalau dokumen memuat beberapa panel, ekstrak panel yang paling dominan/lengkap saja, dan catat
-   di remark load pertama bahwa dokumen memuat panel lain.
+7. BEBERAPA PANEL DALAM SATU DOKUMEN. Format loads.json hanya memuat SATU panel, jadi ekstrak
+   panel yang paling dominan/lengkap saja. Tapi JANGAN membuang sisanya diam-diam — itu
+   membuat orang mengira schedule-nya sudah lengkap padahal separuhnya hilang.
+   WAJIB isi "remark" pada load PERTAMA dengan format persis:
+   "PANEL LAIN TIDAK DIEKSTRAK: <nama panel 1>, <nama panel 2>, ... (jalankan ulang per panel)"
+   Sebutkan nama panelnya satu per satu, dan perkiraan jumlah load tiap panel kalau terbaca.
+   Kalau dokumen hanya memuat SATU panel, jangan tulis remark ini sama sekali.
+
+8. JANGAN MEMOTONG DAFTAR. Ekstrak SEMUA baris load milik panel yang kamu pilih — jangan berhenti
+   di beberapa baris pertama, jangan meringkas, jangan menulis "dan seterusnya". Kalau tabelnya
+   panjang, tetap keluarkan seluruh barisnya. Daftar yang terpotong lebih berbahaya daripada
+   tidak ada data sama sekali, karena panel schedule-nya akan terlihat lengkap padahal kurang.
 
 Keluarkan JSON saja.`;
 

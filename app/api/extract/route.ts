@@ -14,6 +14,9 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const MAX_BYTES = 15 * 1024 * 1024;
+// Passed explicitly rather than left to the client default, so the truncation
+// check below and the budget it checks against can never drift apart.
+const MAX_OUTPUT_TOKENS = 8000;
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 
 export async function POST(req: Request) {
@@ -75,8 +78,22 @@ export async function POST(req: Request) {
   let loads: LoadsFile;
   let stats;
   try {
-    const reply = await callOlagon({ system: EXTRACTION_SYSTEM_PROMPT, content });
+    const reply = await callOlagon({
+      system: EXTRACTION_SYSTEM_PROMPT,
+      content,
+      maxTokens: MAX_OUTPUT_TOKENS,
+    });
     stats = reply.stats;
+    // Checked before parsing, because a truncated list is the one failure that
+    // can look like a success: the JSON may still parse, just with rows missing,
+    // and a panel schedule that is quietly short is worse than one that errors.
+    if (stats.stopReason === "max_tokens") {
+      throw new Error(
+        `Jawaban model terpotong di batas ${MAX_OUTPUT_TOKENS} token (stop_reason=max_tokens), jadi ` +
+          `daftar load-nya hampir pasti tidak lengkap. Schedule ini terlalu panjang untuk ` +
+          `satu permintaan — pecah PDF-nya per panel dan ekstrak satu per satu.`
+      );
+    }
     loads = parseJsonFromModel<LoadsFile>(reply.text);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Ekstraksi gagal";
