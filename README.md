@@ -242,6 +242,13 @@ Calls give up after 45 seconds, short of the platform's 60 s ceiling, so a
 gateway that hangs produces a real error message rather than the function being
 killed and answering with an HTML error page.
 
+Replies are read tolerantly, because a proxy is not obliged to match the
+documented shape exactly: content as an array of blocks, content as a bare
+string, and an OpenAI-style `choices[].message.content` all work, and non-text
+blocks such as thinking are skipped. When no text can be found at all, the error
+names the response's structure and `stop_reason` instead of just reporting
+emptiness.
+
 
 `gateway.olagon.site` is a **third-party commercial proxy** with an
 Anthropic-compatible API format, not an Anthropic service. Uploaded documents —

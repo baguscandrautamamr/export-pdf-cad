@@ -45,7 +45,10 @@ export async function GET() {
     const reply = await callOlagon({
       system: "Balas dengan satu kata: OK",
       content: [{ type: "text", text: "ping" }],
-      maxTokens: 16,
+      // Not 16: if the model behind the gateway emits a thinking block first,
+      // a tight budget is spent before any text block exists, and the reply
+      // comes back empty for a reason that has nothing to do with the gateway.
+      maxTokens: 256,
     });
     return NextResponse.json({
       ok: true,

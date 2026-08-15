@@ -20,7 +20,9 @@ export type ContentBlock =
     };
 
 interface MessagesResponse {
-  content?: Array<{ type: string; text?: string }>;
+  content?: Array<{ type: string; text?: string }> | string;
+  stop_reason?: string;
+  choices?: Array<{ message?: { content?: string } }>;
   error?: { message?: string; type?: string };
 }
 
@@ -105,14 +107,55 @@ export async function callOlagon({
     );
   }
 
-  const text = (data.content ?? [])
-    .filter((b) => b.type === "text" && typeof b.text === "string")
-    .map((b) => b.text as string)
-    .join("\n")
-    .trim();
-
-  if (!text) throw new Error("Gateway membalas tanpa isi teks");
+  const text = extractText(data);
+  if (!text) {
+    // A third-party proxy is not guaranteed to answer in the exact shape the
+    // Anthropic API documents, and "no text" on its own says nothing about
+    // which part is unfamiliar. Describe what did arrive.
+    throw new Error(
+      `Gateway membalas tanpa isi teks. Bentuk balasan: ${describeResponse(data, raw)}`
+    );
+  }
   return text;
+}
+
+/**
+ * Pulls the assistant's text out of a response.
+ *
+ * The documented shape is Anthropic's — content as an array of blocks — but
+ * this goes through a third-party proxy, so the tolerated variations are worth
+ * having: content as a bare string, and the OpenAI-style choices array that
+ * proxies serving several upstreams often fall back to. Non-text blocks such as
+ * thinking are skipped rather than treated as content.
+ */
+function extractText(data: MessagesResponse): string {
+  const { content } = data;
+
+  if (typeof content === "string") return content.trim();
+
+  if (Array.isArray(content)) {
+    const text = content
+      .filter((b) => b?.type === "text" && typeof b.text === "string")
+      .map((b) => b.text as string)
+      .join("\n")
+      .trim();
+    if (text) return text;
+  }
+
+  const choice = data.choices?.[0]?.message?.content;
+  if (typeof choice === "string") return choice.trim();
+
+  return "";
+}
+
+/** Names the response's structure without dumping a whole document back out. */
+function describeResponse(data: MessagesResponse, raw: string): string {
+  const keys = Object.keys(data ?? {}).join(", ") || "(kosong)";
+  const blocks = Array.isArray(data?.content)
+    ? data.content.map((b) => b?.type ?? "?").join(", ")
+    : typeof data?.content;
+  const stop = data?.stop_reason ? `, stop_reason=${data.stop_reason}` : "";
+  return `keys=[${keys}], content=${blocks}${stop}. Cuplikan: ${raw.slice(0, 300)}`;
 }
 
 /**
