@@ -31,6 +31,9 @@ export interface CallOptions {
   signal?: AbortSignal;
 }
 
+/** Short of the platform's 60 s ceiling, so this fails before the function is killed. */
+export const GATEWAY_TIMEOUT_MS = 45_000;
+
 export function gatewayConfig() {
   const apiKey = process.env.OLAGON_API_KEY;
   const baseUrl = (
@@ -52,21 +55,39 @@ export async function callOlagon({
     throw new Error("OLAGON_API_KEY belum diset di environment");
   }
 
-  const res = await fetch(`${baseUrl}/v1/messages`, {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "content-type": "application/json",
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: "user", content }],
-    }),
-    signal,
-  });
+  // Without a deadline of our own, a gateway that hangs keeps the request open
+  // until the platform kills the whole function — on Vercel at 60 seconds, and
+  // what comes back then is an HTML error page rather than anything this code
+  // wrote. Giving up first turns that into a real error message.
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}/v1/messages`, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "content-type": "application/json",
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: maxTokens,
+        system,
+        messages: [{ role: "user", content }],
+      }),
+      signal: signal ?? AbortSignal.timeout(GATEWAY_TIMEOUT_MS),
+    });
+  } catch (err) {
+    const name = (err as Error)?.name;
+    if (name === "TimeoutError" || name === "AbortError") {
+      throw new Error(
+        `Gateway tidak membalas dalam ${GATEWAY_TIMEOUT_MS / 1000} detik (${baseUrl}). ` +
+          `Dokumen mungkin terlalu besar, atau gateway sedang tidak merespons.`
+      );
+    }
+    throw new Error(
+      `Tidak bisa menghubungi gateway di ${baseUrl}: ${(err as Error)?.message ?? String(err)}`
+    );
+  }
 
   const raw = await res.text();
   let data: MessagesResponse;

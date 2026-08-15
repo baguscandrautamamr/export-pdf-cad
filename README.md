@@ -232,6 +232,17 @@ Both remain available without code changes:
 
 ## Olagon gateway
 
+`GET /api/gateway-check` (signed in) sends a one-word request to the gateway and
+reports the outcome: base URL, model, whether the key is set and whether it has
+the documented `rk_` shape, round-trip latency, and the upstream error verbatim
+when it fails. Use it to separate "the gateway is unreachable" from "the
+document was too big" — the two are indistinguishable from the extract screen.
+
+Calls give up after 45 seconds, short of the platform's 60 s ceiling, so a
+gateway that hangs produces a real error message rather than the function being
+killed and answering with an HTML error page.
+
+
 `gateway.olagon.site` is a **third-party commercial proxy** with an
 Anthropic-compatible API format, not an Anthropic service. Uploaded documents —
 including client project data — transit Olagon's servers, its security claims are
