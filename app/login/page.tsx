@@ -2,14 +2,23 @@
 
 import { Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import GlassCard from "@/components/GlassCard";
 import Navbar from "@/components/Navbar";
 import { useI18n } from "@/lib/i18n/I18nContext";
 
+/**
+ * callbackUrl arrives from the query string, so treat it as untrusted: allow a
+ * same-site path and nothing else, or an attacker can turn the login page into
+ * an open redirect by linking to /login?callbackUrl=https://elsewhere.
+ */
+function safeCallback(raw: string): string {
+  if (!raw.startsWith("/") || raw.startsWith("//")) return "/";
+  return raw;
+}
+
 function LoginForm() {
   const { t } = useI18n();
-  const router = useRouter();
   const params = useSearchParams();
   const callbackUrl = params.get("callbackUrl") || "/";
 
@@ -23,13 +32,17 @@ function LoginForm() {
     setError("");
     setLoading(true);
     const res = await signIn("credentials", { email, password, redirect: false });
-    setLoading(false);
     if (res?.ok) {
-      router.push(callbackUrl);
-      router.refresh();
-    } else {
-      setError(t("login.error"));
+      // Full page load, not router.push(): the App Router keeps a client-side
+      // cache of already-visited routes, and "/" was visited a moment ago as
+      // the redirect that landed us here. Pushing to it can re-render that
+      // cached copy — the login page again — even though the session is now
+      // valid. A real navigation re-requests the page with the new cookie.
+      window.location.assign(safeCallback(callbackUrl));
+      return; // keep the button disabled while the browser navigates
     }
+    setLoading(false);
+    setError(t("login.error"));
   }
 
   return (
