@@ -16,6 +16,7 @@ The builders are imported rather than shelled out to: one process, no argv, and
 python/ stays the single source of the engineering code.
 """
 import base64
+import hmac
 import json
 import os
 import pathlib
@@ -34,6 +35,19 @@ MIME = {
     ".pdf": "application/pdf",
 }
 MAX_BODY = 8 * 1024 * 1024
+
+# Vercel caps a function's *response* at ~4.5 MB, the same way it caps the
+# request. Base64 inflates by a third, and the PDF preview is by far the biggest
+# of the three files, so a large panel can cross the line and be rejected by the
+# platform with an HTML error page rather than anything written here. Staying
+# under a slightly lower ceiling leaves room for the JSON envelope and for the
+# Node route re-serialising all of this on its way to the browser.
+MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+
+
+class ResponseTooLarge(Exception):
+    """Deliverables that will not fit in one response. Distinct from ValueError,
+    which here always means a rejected loads.json and answers 400."""
 
 
 def run(loads):
@@ -68,9 +82,43 @@ def run(loads):
                     "mime": MIME[ext],
                     "base64": base64.b64encode(f.read()).decode("ascii"),
                 })
+        files = fit_response(files, summary)  # may append a note to summary
         return summary, files
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def fit_response(files, summary):
+    """Drop the PDF preview when the payload would exceed the platform's limit.
+
+    The xlsx and the dxf are the deliverables; the PDF is a convenience view of
+    the dxf that any CAD viewer can reproduce. So when all three will not fit,
+    sending two is much better than sending an error - the engineer still gets
+    the schedule and the drawing, and the summary says what was left out and
+    why. Only if the remaining files still do not fit does this give up, and it
+    says so with the actual sizes rather than letting the platform answer with
+    an HTML error page the browser cannot parse.
+    """
+    total = sum(len(f["base64"]) for f in files)
+    if total <= MAX_RESPONSE_BYTES:
+        return files
+
+    kept = [f for f in files if not f["name"].lower().endswith(".pdf")]
+    dropped = total - sum(len(f["base64"]) for f in kept)
+    if kept and dropped and sum(len(f["base64"]) for f in kept) <= MAX_RESPONSE_BYTES:
+        summary.append(
+            f"Preview PDF ({dropped / 1024 / 1024:.1f} MB) tidak disertakan: total "
+            f"balasan {total / 1024 / 1024:.1f} MB melebihi batas "
+            f"{MAX_RESPONSE_BYTES / 1024 / 1024:.1f} MB. Buka berkas DXF-nya untuk "
+            f"melihat gambar yang sama."
+        )
+        return kept
+
+    raise ResponseTooLarge(
+        f"Berkas hasil terlalu besar untuk dikirim balik "
+        f"({total / 1024 / 1024:.1f} MB, batas {MAX_RESPONSE_BYTES / 1024 / 1024:.1f} MB). "
+        f"Panel sebesar ini sebaiknya dipecah menjadi beberapa panel."
+    )
 
 
 class handler(BaseHTTPRequestHandler):
@@ -88,7 +136,10 @@ class handler(BaseHTTPRequestHandler):
         secret = os.environ.get("INTERNAL_API_SECRET")
         if not secret:
             return self._send(500, {"error": "INTERNAL_API_SECRET belum diset"})
-        if self.headers.get("x-internal-secret") != secret:
+        # compare_digest, not !=: a plain comparison returns as soon as two
+        # bytes differ, which leaks the length of the matching prefix.
+        provided = self.headers.get("x-internal-secret") or ""
+        if not hmac.compare_digest(provided, secret):
             return self._send(401, {"error": "Unauthorized"})
 
         try:
@@ -108,13 +159,17 @@ class handler(BaseHTTPRequestHandler):
 
         if not isinstance(loads, dict):
             return self._send(400, {"error": "field 'loads' tidak ada"})
-        if not (loads.get("panel") or {}).get("name", "").strip():
-            return self._send(400, {"error": "panel.name wajib diisi"})
-        if not loads.get("loads"):
-            return self._send(400, {"error": "loads harus berisi minimal satu item"})
 
+        # Field-level validation lives in panel_core.validate_loads(), which
+        # load_config() calls inside run(); it raises ValueError listing every
+        # problem at once. Catching it here is what makes a bad row a 400 with
+        # an explanation instead of a 500 with a KeyError in it.
         try:
             summary, files = run(loads)
+        except ValueError as exc:
+            return self._send(400, {"error": str(exc)})
+        except ResponseTooLarge as exc:
+            return self._send(413, {"error": str(exc)})
         except Exception as exc:  # noqa: BLE001 - report, don't crash the lambda
             return self._send(500, {"error": f"Generate gagal: {type(exc).__name__}: {exc}"})
 
