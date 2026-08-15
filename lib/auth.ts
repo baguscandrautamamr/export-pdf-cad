@@ -57,7 +57,10 @@ export const authOptions: NextAuthOptions = {
 
         const demoEmail = process.env.DEMO_USER_EMAIL?.trim().toLowerCase();
         const demoHash = process.env.DEMO_USER_PASSWORD_HASH?.trim();
-        const demoPlain = process.env.DEMO_USER_PASSWORD;
+        // Trimmed: pasting a value into a hosting dashboard picks up a trailing
+        // newline or space depressingly often, and an untrimmed compare then
+        // fails in a way that is indistinguishable from a wrong password.
+        const demoPlain = process.env.DEMO_USER_PASSWORD?.trim();
         // A configured hash that is not a bcrypt string is almost always the
         // dotenv-expand trap, not a typo. Treat it as unconfigured and say so.
         const hashUsable = !!demoHash && /^\$2[aby]?\$\d{2}\$/.test(demoHash);
