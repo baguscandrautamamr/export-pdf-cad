@@ -13,7 +13,11 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const run = promisify(execFile);
-const PYTHON = process.env.PYTHON_BIN || "python3";
+// Windows installs the interpreter as "python" (and the launcher as "py");
+// "python3" does not exist there, so defaulting to it makes every generate fail
+// with ENOENT on an otherwise correct setup. PYTHON_BIN still overrides both.
+const PYTHON =
+  process.env.PYTHON_BIN || (process.platform === "win32" ? "python" : "python3");
 const SCRIPT_DIR = path.join(process.cwd(), "python");
 const TIMEOUT_MS = 55_000;
 
@@ -191,7 +195,13 @@ function isRejectedInput(err: unknown): boolean {
 function describe(err: unknown): string {
   const e = err as NodeJS.ErrnoException & { stderr?: string; killed?: boolean };
   if (e?.code === "ENOENT") {
-    return `'${PYTHON}' tidak ditemukan. Jalankan 'pip install -r python/requirements.txt', atau set PYTHON_SERVICE_URL kalau builder Python berjalan sebagai service terpisah (lihat README bagian Deploy).`;
+    return (
+      `Interpreter '${PYTHON}' tidak ditemukan. Pastikan Python terpasang dan ada di PATH, ` +
+      `lalu jalankan 'pip install -r python/requirements.txt'. Kalau nama interpreter-nya ` +
+      `berbeda di mesin ini, set PYTHON_BIN di .env.local (mis. PYTHON_BIN=py). Atau set ` +
+      `PYTHON_SERVICE_URL kalau builder Python berjalan sebagai service terpisah (lihat ` +
+      `README bagian Deploy).`
+    );
   }
   if (e?.killed || e?.name === "TimeoutError") return "Script Python melebihi batas waktu";
   const stderr = e?.stderr?.trim();

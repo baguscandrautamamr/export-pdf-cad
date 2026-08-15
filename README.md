@@ -24,6 +24,9 @@ mix-ups, ambiguous per-unit vs total, motors marked as non-motors).
 ## Setup
 
 ```bash
+git clone https://github.com/baguscandrautamamr/export-pdf-cad.git
+cd export-pdf-cad
+
 npm install
 cp .env.local.example .env.local
 # fill OLAGON_API_KEY
@@ -33,6 +36,31 @@ pip install -r python/requirements.txt --break-system-packages
 
 npm run dev
 ```
+
+`NEXTAUTH_SECRET` is not optional even locally: the middleware reads the session
+cookie with it, and without one every page bounces back to `/login`.
+
+### On Windows
+
+Same steps, three substitutions — `copy` for `cp`, backslashes in the pip path,
+and no `--break-system-packages` (that flag is for Debian-managed Pythons):
+
+```cmd
+copy .env.local.example .env.local
+pip install -r python\requirements.txt
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+The last line prints a `NEXTAUTH_SECRET` without needing `openssl`, which CMD
+does not ship. The interpreter is found automatically — `/api/generate` defaults
+to `python` on Windows and `python3` elsewhere — so `PYTHON_BIN` is only needed
+if yours is named something else, such as `py`.
+
+Running it as a local app rather than deploying is worth considering on its own
+merits: `gatewayBudgetMs()` allows 240 s off Vercel instead of 52 s, uploads are
+capped by the route's 15 MB rather than Vercel's ~4.5 MB platform limit (which
+applies on every plan, paid ones included), the builders run in-process with no
+250 MB function limit, and nothing is dropped from the response.
 
 Open http://localhost:3000 → redirected to `/login` → sign in → upload → review →
 generate → download.
