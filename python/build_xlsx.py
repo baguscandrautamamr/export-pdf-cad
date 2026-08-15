@@ -214,9 +214,15 @@ def make(cfg, outdir='.'):
 
 
 def main():
-    cfg = load_config(sys.argv[1])
-    outdir = sys.argv[2] if len(sys.argv) > 2 else '.'
-    path, summary = make(cfg, outdir)
+    # See build_dxf.main(): a rejected loads.json should read as a message, not
+    # as a traceback with the message somewhere in the middle of it.
+    try:
+        cfg = load_config(sys.argv[1])
+        outdir = sys.argv[2] if len(sys.argv) > 2 else '.'
+        path, summary = make(cfg, outdir)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        sys.exit(2)
     print(f"OK  {path}")
     print(f"    {summary}")
 
