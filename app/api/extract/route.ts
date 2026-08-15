@@ -80,7 +80,14 @@ export async function POST(req: Request) {
     loads = parseJsonFromModel<LoadsFile>(reply.text);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Ekstraksi gagal";
-    return NextResponse.json({ error: message }, { status: 502 });
+    // Name the document too. Every other number in the message describes the
+    // call; without this one there is nothing to weigh them against, and "the
+    // document is too heavy" is a claim the reader cannot check.
+    const mb = (file.size / 1024 / 1024).toFixed(1);
+    return NextResponse.json(
+      { error: `${message} [dokumen: ${file.name}, ${mb} MB, ${mime}]` },
+      { status: 502 }
+    );
   }
 
   // Returned on success too, so a call that only just made it inside the budget

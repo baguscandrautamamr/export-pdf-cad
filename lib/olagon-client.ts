@@ -48,6 +48,15 @@ export interface CallStats {
   ttfbMs: number | null;
   /** Characters of assistant text received before finishing or giving up. */
   chars: number;
+  /**
+   * SSE events seen, of any kind.
+   *
+   * Distinguishes a stream that is alive but has produced no answer yet — the
+   * gateway sending message_start and keepalives while the model still reads
+   * the document — from one that went silent after opening. Both show
+   * chars: 0, and they mean different things.
+   */
+  frames: number;
   /** ms from request start until the call returned or gave up. */
   elapsedMs: number;
   /** Whether the reply arrived as a token stream or as one buffered JSON body. */
@@ -112,7 +121,7 @@ export async function callOlagon({
   const startedAt = Date.now();
   const budgetMs = gatewayBudgetMs();
   const deadline = signal ?? AbortSignal.timeout(budgetMs);
-  const stats: CallStats = { ttfbMs: null, chars: 0, elapsedMs: 0, streamed: true };
+  const stats: CallStats = { ttfbMs: null, chars: 0, frames: 0, elapsedMs: 0, streamed: true };
 
   const send = (stream: boolean) =>
     fetch(`${baseUrl}/v1/messages`, {
@@ -210,10 +219,19 @@ function describeHttpError(err: GatewayHttpError): Error {
 /**
  * Turns a transport failure into a sentence that says which failure it was.
  *
- * The distinction that matters is whether anything ever came back. Nothing at
- * all points at the gateway or the network; a stream that started and then ran
- * out of time points at the document, and the caller can act on that by sending
- * fewer pages.
+ * There are three, not two, and the middle one is easy to miss. Bytes arriving
+ * is not the same as an answer arriving: the gateway opens the stream and sends
+ * message_start (and keepalives) as soon as it has accepted the request, long
+ * before the model has read the document. So a call can have a healthy time to
+ * first byte and still not have received a single character of answer.
+ *
+ *   no bytes at all      the gateway or the network
+ *   bytes, no text       the model never started writing — the whole budget
+ *                        went into reading the document
+ *   text, then cut off   the answer was genuinely too long to finish
+ *
+ * The first version of this collapsed the middle case into the third and told
+ * the reader the gateway had "sent part of an answer" when it had sent none.
  */
 function describeTransportError(
   err: unknown,
@@ -241,17 +259,32 @@ function describeTransportError(
     );
   }
 
+  if (stats.chars === 0) {
+    return new Error(
+      `Model belum menulis sehuruf pun sampai batas ${seconds} detik ` +
+        `(${summarise(stats)}). Koneksi ke gateway sehat — byte pertama datang di ` +
+        `${stats.ttfbMs} ms — tapi seluruh sisa waktunya habis untuk MEMBACA dokumen, ` +
+        `belum sampai menulis jawaban. Ini soal berat dokumen, bukan panjang jawaban: ` +
+        `potong PDF-nya hanya ke halaman yang memuat equipment schedule.`
+    );
+  }
+
   return new Error(
-    `Ekstraksi terpotong setelah ${seconds} detik (${summarise(stats)}). Gateway ` +
-      `merespons normal dan sempat mengirim sebagian jawaban, jadi dokumennya yang ` +
-      `terlalu besar untuk selesai dalam satu permintaan — kirim hanya halaman ` +
-      `yang memuat equipment schedule.`
+    `Jawaban terpotong di tengah setelah ${seconds} detik (${summarise(stats)}). ` +
+      `Model sudah menulis ${stats.chars} karakter tapi belum selesai, jadi ` +
+      `schedule-nya terlalu panjang untuk satu permintaan — pecah per panel, atau ` +
+      `kirim halamannya sebagian dulu.`
   );
 }
 
 function summarise(stats: CallStats): string {
   const ttfb = stats.ttfbMs === null ? "tidak ada balasan" : `byte pertama ${stats.ttfbMs} ms`;
-  return `${ttfb}, ${stats.chars} karakter diterima, total ${stats.elapsedMs} ms`;
+  // Frame count separates a stream that is alive but silent — keepalives with
+  // no content — from one that delivered nothing after the opening event.
+  return (
+    `${ttfb}, ${stats.frames} frame, ${stats.chars} karakter teks, ` +
+    `total ${stats.elapsedMs} ms`
+  );
 }
 
 /**
@@ -275,6 +308,7 @@ async function readSse(
   let stopReason: string | undefined;
 
   const handle = (raw: string) => {
+    stats.frames += 1;
     // An event may carry several data: lines, which concatenate.
     const payload = raw
       .split("\n")
