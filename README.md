@@ -250,9 +250,12 @@ I have not been able to run the actual Vercel build, so these are unverified:
 - **Cold starts.** The Python function imports matplotlib; first request after
   idle will be slow.
 - **60 second ceiling.** Both routes declare `maxDuration = 60`, which is also
-  the Hobby plan's maximum. A large PDF going through the gateway can exceed it;
-  the function is then killed and answers with an HTML error page rather than
-  JSON. The client now reports that as a timeout instead of a parse error.
+  the Hobby plan's maximum. The gateway call gives up at 52 s so the function is
+  never killed mid-flight, and the error names which half ran out of time (see
+  the gateway section). A schedule big enough to need more than 52 s of
+  generation cannot be extracted on Hobby in one request — split the PDF down to
+  the equipment-schedule pages, or raise `maxDuration` on a paid plan, where
+  `gatewayBudgetMs()` should be raised to match.
 - **~4.5 MB request body.** Uploads are capped at 4 MB in the browser for this
   reason. Splitting a big drawing set down to the equipment-schedule pages is
   the practical workaround.
@@ -281,16 +284,40 @@ the documented `rk_` shape, round-trip latency, and the upstream error verbatim
 when it fails. Use it to separate "the gateway is unreachable" from "the
 document was too big" — the two are indistinguishable from the extract screen.
 
-Calls give up after 45 seconds, short of the platform's 60 s ceiling, so a
-gateway that hangs produces a real error message rather than the function being
-killed and answering with an HTML error page.
+Requests are **streamed**. A buffered request returns nothing until the model
+has finished writing, so a call that needed 50 s and a gateway that was never
+going to answer look identical right up to the deadline. Streaming puts the
+first bytes on the wire in a second or two, keeps intermediate proxies from
+dropping a connection that has gone quiet, and lets a failure say how far it
+got.
+
+The budget comes from the platform, not a fixed number: **52 s on Vercel**, just
+under the 60 s `maxDuration` the routes declare, and **240 s** elsewhere, where
+no such wall exists. The old fixed 45 s left a quarter of Vercel's allowance
+unused and imposed Vercel's limit on self-hosted runs that had no reason to obey
+it.
+
+That makes a timeout say which failure it was:
+
+| What the message says | What it means |
+|---|---|
+| `Tidak bisa menghubungi gateway` | DNS, refused, TLS, wrong base URL — it failed fast |
+| `tidak membalas sama sekali setelah N detik` | Connected, zero bytes back. The gateway or the network, *not* the document |
+| `terpotong setelah N detik (byte pertama … karakter diterima …)` | The gateway was answering normally and ran out of time. The document is too big — send fewer pages |
+
+`/api/extract` returns the same `stats` on success, so a run that only just fit
+inside the budget is visible before it starts failing.
 
 Replies are read tolerantly, because a proxy is not obliged to match the
-documented shape exactly: content as an array of blocks, content as a bare
-string, and an OpenAI-style `choices[].message.content` all work, and non-text
-blocks such as thinking are skipped. When no text can be found at all, the error
-names the response's structure and `stop_reason` instead of just reporting
-emptiness.
+documented shape exactly. Streamed: Anthropic SSE (`content_block_delta`), CRLF
+frame separators, and OpenAI-style `choices[].delta.content`. Buffered — the
+shape a proxy returns when it ignores `stream: true`, which is detected and
+handled: content as an array of blocks, content as a bare string, and
+`choices[].message.content`. A proxy that rejects streaming outright is retried
+once without it, but only when the error actually names streaming, so a bad key
+does not cost two round trips. Non-text blocks such as thinking are skipped, and
+when no text can be found at all the error names the response's structure and
+`stop_reason` instead of just reporting emptiness.
 
 
 `gateway.olagon.site` is a **third-party commercial proxy** with an

@@ -73,13 +73,18 @@ export async function POST(req: Request) {
   ];
 
   let loads: LoadsFile;
+  let stats;
   try {
-    const text = await callOlagon({ system: EXTRACTION_SYSTEM_PROMPT, content });
-    loads = parseJsonFromModel<LoadsFile>(text);
+    const reply = await callOlagon({ system: EXTRACTION_SYSTEM_PROMPT, content });
+    stats = reply.stats;
+    loads = parseJsonFromModel<LoadsFile>(reply.text);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Ekstraksi gagal";
     return NextResponse.json({ error: message }, { status: 502 });
   }
 
-  return NextResponse.json({ loads, warnings: collectWarnings(loads) });
+  // Returned on success too, so a call that only just made it inside the budget
+  // is visible before it starts failing — the run before the first timeout is
+  // the one that would have warned you.
+  return NextResponse.json({ loads, warnings: collectWarnings(loads), stats });
 }

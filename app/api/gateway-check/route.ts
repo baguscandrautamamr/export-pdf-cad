@@ -42,7 +42,7 @@ export async function GET() {
 
   const startedAt = Date.now();
   try {
-    const reply = await callOlagon({
+    const { text, stats } = await callOlagon({
       system: "Balas dengan satu kata: OK",
       content: [{ type: "text", text: "ping" }],
       // Not 16: if the model behind the gateway emits a thinking block first,
@@ -54,7 +54,11 @@ export async function GET() {
       ok: true,
       config,
       latencyMs: Date.now() - startedAt,
-      reply: reply.slice(0, 80),
+      // ttfbMs is the number that matters when extraction times out: this ping
+      // produces almost no output, so a slow first byte here is the gateway
+      // itself rather than anything about the document.
+      stats,
+      reply: text.slice(0, 80),
     });
   } catch (err) {
     return NextResponse.json(
