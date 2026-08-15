@@ -93,6 +93,7 @@ like `user` is accepted alongside a real email address.
 | `DEMO_USER_EMAIL` | Demo login email/username (example ships `user`) |
 | `DEMO_USER_PASSWORD` | Plaintext password. Simplest option, no hashing. Ignored when a valid hash is set |
 | `DEMO_USER_PASSWORD_HASH` | bcrypt hash from `scripts/hash-password.js`; escape `$` as `\$` in `.env.local`. Takes precedence over `DEMO_USER_PASSWORD` |
+| `AUTH_STATUS_TOKEN` | Optional. Unlocks the shape fields of `/api/auth-status` in production; without it those fields are withheld there |
 | `PYTHON_BIN` | Optional, Python interpreter for `/api/generate` (default `python3`) |
 | `INTERNAL_API_SECRET` | Shared secret between `/api/generate` and the Python function. Required wherever the Python side runs out-of-process (Vercel included) |
 | `PYTHON_SERVICE_URL` | Optional. URL of the Python builder when it is deployed as its own service. Unset on Vercel — the route defaults to `/api/build` in the same deployment |
@@ -117,8 +118,34 @@ Only `panel.name` and `loads` are required; everything under `system` defaults
 `watt` is always **per unit and in watts** — `qty` splits into one breaker per
 unit downstream, so never pre-multiply.
 
+A 3-phase load is treated as a motor unless it says `"motor": false`, because on
+an equipment schedule nearly every 3-phase item is one. The default costs a
+non-motor load a size or two of breaker; the opposite default would undersize a
+real motor and trip it on start.
+
+`system.ambient_c` must be **55 °C or below** — that is where IEC 60364-5-52
+Table B.52.14 ends. Values in between are interpolated. Above it the generator
+refuses rather than reusing the last tabulated factor, which would overstate the
+cable's capacity.
+
 The TypeScript mirror lives in `types/loads.ts`; `lib/sample.ts` holds a full
 worked example that the UI can load without spending a gateway call.
+
+### Validation
+
+`lib/validate.ts` holds two passes over a `loads.json`, and
+`python/panel_core.py:validate_loads()` repeats the fatal one for callers that
+never go through the web app (the CLI builders, the serverless function).
+
+- **Fatal** (`validateLoads`) — missing `tag`, a `watt` that is not a positive
+  number, a `phase` outside 1/3, a `qty` below 1. These are the fields the
+  Python builders index into directly, so without the check they surface as
+  `KeyError` or a division by zero. `/api/generate` returns `400` listing every
+  problem at once.
+- **Advisory** (`collectWarnings`) — well-formed but suspicious: a kW figure that
+  never got scaled to watts, a fan that came back `motor: false`. Shown after
+  extraction; only the engineer can say whether a number is actually wrong, so
+  these never block.
 
 ## API
 
@@ -132,8 +159,18 @@ rather than an HTML redirect.
   past that the platform answers with an HTML error page the client cannot
   parse. Raise `MAX_UPLOAD_BYTES` in `app/page.tsx` when self-hosting.
 - `POST /api/generate` — `{ loads }` → `{ summary, files: [{name, mime, base64}] }`.
-  Writes `loads.json` to a temp dir, runs both Python builders, reads back
-  whatever they wrote, and always removes the temp dir.
+  Validates first and answers `400` with a `problems` array if anything is
+  malformed; otherwise writes `loads.json` to a temp dir, runs both Python
+  builders, reads back whatever they wrote, and always removes the temp dir.
+  A rejection that only the Python side can make — an out-of-range ambient, a
+  load too big for any single cable — also comes back as `400`, not `500`.
+
+`GET /api/auth-status` is public and reports whether the auth environment is
+configured, plus the deployed commit. The fields describing the *shape* of the
+configured username and password are the diagnostic half, and they are withheld
+in production unless the request carries `?token=<AUTH_STATUS_TOKEN>` — "4
+characters, all lowercase, plaintext" is precise enough to be worth guarding.
+Outside production they are always shown.
 
 ## Python core
 
@@ -219,6 +256,12 @@ I have not been able to run the actual Vercel build, so these are unverified:
 - **~4.5 MB request body.** Uploads are capped at 4 MB in the browser for this
   reason. Splitting a big drawing set down to the equipment-schedule pages is
   the practical workaround.
+- **~4.5 MB response body.** The same cap applies coming back, and base64
+  inflates the files by a third — the 34-circuit example already returns ~1.5 MB,
+  most of it the PDF preview. `api/build.py` handles this rather than letting the
+  platform reject the response: over the limit it drops the PDF preview, returns
+  the xlsx and dxf, and says so in the summary. Only if those alone still do not
+  fit does it answer `413`.
 
 ### The other two options
 
@@ -270,6 +313,8 @@ Done:
 - Vercel deploy path for the Python builders (`api/build.py` + proxy)
 - i18n ID/EN, light/dark theme, glassmorphism UI, PWA
 - `/api/extract` and `/api/generate`, manual JSON review before generate
+- Input validation on both sides of the Node/Python boundary, so a hand-edited
+  `loads.json` gets a list of what to fix rather than a Python traceback
 
 Open:
 
