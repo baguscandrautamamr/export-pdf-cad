@@ -74,6 +74,25 @@ ATURAN EKSTRAKSI (patuhi persis, ini sumber kesalahan paling mahal):
 6. JANGAN MENGARANG. Informasi yang tidak terbaca diisi string kosong "" dan dijelaskan di "remark".
    Lebih baik kosong + catatan daripada angka karangan.
 
+6b. DAYA YANG TIDAK TERBACA. Aturan 6 TIDAK berlaku untuk "watt" dengan cara yang sama:
+   angka 0 bukan penanda "kosong", melainkan klaim bahwa peralatannya tidak menarik daya.
+   JANGAN PERNAH menulis "watt": 0 atau angka negatif.
+   Kalau kolom daya untuk satu baris benar-benar tidak terbaca:
+   - Cek dulu apakah nilainya ada di kolom lain (mis. "TOTAL kW", "INPUT POWER", "FLA x V"),
+     di baris rangkuman per grup, atau di halaman lain dokumen yang sama.
+   - Kalau memang tidak ada di mana pun, TETAP keluarkan load-nya, isi "watt" dengan angka
+     terbaik yang bisa kamu dasarkan pada dokumen, dan WAJIB isi
+     "remark": "DAYA TIDAK TERBACA: <apa yang kamu lihat di baris itu>".
+   Seorang engineer akan mengisi angkanya manual dari drawing; yang dia butuhkan darimu
+   adalah tahu baris mana yang perlu dia isi, bukan angka 0 yang menyamar sebagai data.
+
+6c. BARIS YANG BUKAN LOAD. Tabel equipment schedule berisi baris judul kelompok
+   ("FAN EQUIPMENT", "INDOOR UNIT", "AHU SYSTEM"), baris subtotal, dan baris keterangan.
+   Baris seperti itu BUKAN load dan tidak punya breaker sendiri — jangan dimasukkan ke
+   "loads". Ciri-cirinya: tidak punya angka daya sendiri, atau angkanya adalah jumlah dari
+   baris-baris di bawahnya. Kalau ragu apakah suatu baris judul atau load, masukkan sebagai
+   load dan beri "remark": "AMBIGU: mungkin baris judul, bukan load".
+
 7. Kalau dokumen memuat beberapa panel, ekstrak panel yang paling dominan/lengkap saja, dan catat
    di remark load pertama bahwa dokumen memuat panel lain.
 

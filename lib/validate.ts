@@ -52,8 +52,19 @@ export function validateLoads(data: unknown): string[] {
 
     if (typeof load.watt !== "number" || !Number.isFinite(load.watt)) {
       problems.push(`${where}: 'watt' harus berupa angka (terbaca: ${show(load.watt)})`);
-    } else if (load.watt <= 0) {
-      problems.push(`${where}: 'watt' harus lebih besar dari 0 (terbaca: ${load.watt})`);
+    } else if (load.watt === 0) {
+      // Nearly always extraction saying "I could not read this column" in the
+      // one way the schema left it — a number field with no empty value. Saying
+      // "must be greater than 0" is true and useless; the two things that
+      // actually resolve it are filling the figure in or deleting a row that
+      // was never a load.
+      problems.push(
+        `${where}: daya 0 W. Biasanya berarti kolom kW baris ini tidak terbaca saat ` +
+          `ekstraksi — isi angkanya dari drawing, atau hapus barisnya kalau itu baris ` +
+          `judul kelompok (mis. "FAN EQUIPMENT") dan bukan load yang punya breaker sendiri.`
+      );
+    } else if (load.watt < 0) {
+      problems.push(`${where}: 'watt' tidak boleh negatif (terbaca: ${load.watt})`);
     }
 
     // Absent means single-phase, matching the Python default.
@@ -87,12 +98,24 @@ export function collectWarnings(data: LoadsFile): string[] {
 
   data.loads.forEach((l, i) => {
     const where = `Load #${i + 1} (${l?.tag || "tanpa tag"})`;
-    if (l?.remark && /ambigu/i.test(l.remark)) {
+    // The prompt asks for both markers, so look for both: AMBIGU for a value
+    // the model had to choose between readings, TIDAK TERBACA for one it could
+    // not find at all.
+    if (l?.remark && /ambigu|tidak terbaca/i.test(l.remark)) {
       warnings.push(`${where}: ${l.remark}`);
     }
     if (!l?.tag?.trim()) warnings.push(`${where}: tag kosong`);
-    if (typeof l?.watt !== "number" || !Number.isFinite(l.watt) || l.watt <= 0) {
+    if (typeof l?.watt !== "number" || !Number.isFinite(l.watt)) {
       warnings.push(`${where}: watt tidak valid (${show(l?.watt)})`);
+    } else if (l.watt === 0) {
+      // Worth saying here as well as in validateLoads(), so it is visible on the
+      // review screen rather than only after a generate that gets refused.
+      warnings.push(
+        `${where}: daya 0 W — kolom kW-nya kemungkinan tidak terbaca. Isi dari drawing, ` +
+          `atau hapus baris ini kalau itu baris judul kelompok, bukan load.`
+      );
+    } else if (l.watt < 0) {
+      warnings.push(`${where}: watt negatif (${l.watt})`);
     } else if (l.watt < 10) {
       // Below ~10 W the number is almost always a kW figure that never got scaled.
       warnings.push(`${where}: watt sangat kecil (${l.watt} W) — cek apakah nilainya masih dalam kW`);
