@@ -18,7 +18,7 @@
   "home.subheading": "Upload an equipment schedule, review the extracted data, then generate the files.",
 
   "step.1.title": "1. Upload document",
-  "step.1.desc": "PDF or photo of the equipment schedule. 15 MB max.",
+  "step.1.desc": "PDF or photo of the equipment schedule. 4 MB max.",
   "step.1.choose": "Choose file",
   "step.1.extract": "Extract with AI",
   "step.1.extracting": "Extracting…",

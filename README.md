@@ -126,8 +126,11 @@ Both routes call `getServerSession()` and return JSON `401` when signed out.
 `middleware.ts` deliberately excludes `/api/*` so these get a readable JSON body
 rather than an HTML redirect.
 
-- `POST /api/extract` — `multipart/form-data` with `file` (PDF or PNG/JPEG/WEBP/GIF,
-  15 MB max) → `{ loads, warnings }`.
+- `POST /api/extract` — `multipart/form-data` with `file` (PDF or PNG/JPEG/WEBP/GIF)
+  → `{ loads, warnings }`. The route accepts 15 MB, but the browser blocks
+  anything over 4 MB because Vercel caps a function's request body at ~4.5 MB —
+  past that the platform answers with an HTML error page the client cannot
+  parse. Raise `MAX_UPLOAD_BYTES` in `app/page.tsx` when self-hosting.
 - `POST /api/generate` — `{ loads }` → `{ summary, files: [{name, mime, base64}] }`.
   Writes `loads.json` to a temp dir, runs both Python builders, reads back
   whatever they wrote, and always removes the temp dir.
@@ -209,6 +212,13 @@ I have not been able to run the actual Vercel build, so these are unverified:
   Protection Bypass for Automation.
 - **Cold starts.** The Python function imports matplotlib; first request after
   idle will be slow.
+- **60 second ceiling.** Both routes declare `maxDuration = 60`, which is also
+  the Hobby plan's maximum. A large PDF going through the gateway can exceed it;
+  the function is then killed and answers with an HTML error page rather than
+  JSON. The client now reports that as a timeout instead of a parse error.
+- **~4.5 MB request body.** Uploads are capped at 4 MB in the browser for this
+  reason. Splitting a big drawing set down to the equipment-schedule pages is
+  the practical workaround.
 
 ### The other two options
 

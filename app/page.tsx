@@ -7,6 +7,46 @@ import { useI18n } from "@/lib/i18n/I18nContext";
 import { SAMPLE_LOADS } from "@/lib/sample";
 import type { ExtractResponse, GenerateResponse, GeneratedFile } from "@/types/loads";
 
+/**
+ * Vercel caps a serverless function's request body at ~4.5 MB, well under the
+ * 15 MB the route itself allows when this app runs somewhere without that
+ * limit. Checking in the browser turns a platform-level rejection — which comes
+ * back as an HTML error page, not JSON — into a message that names the file and
+ * its size before anything is uploaded.
+ */
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+
+const mb = (bytes: number) => (bytes / 1024 / 1024).toFixed(1);
+
+/**
+ * A crashed, timed-out or rejected serverless function answers with the
+ * platform's HTML error page, not JSON. Parsing that blindly surfaces
+ * "Unexpected token 'A'" to the user, which says nothing about what went
+ * wrong — so read the body as text first and translate the status instead.
+ */
+async function readJson<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(explainNonJson(res.status, text));
+  }
+}
+
+function explainNonJson(status: number, body: string): string {
+  const head = body.trim().slice(0, 120);
+  if (status === 413) {
+    return `Berkas terlalu besar untuk server (HTTP 413). Batas body di Vercel ~4,5 MB, jauh di bawah batas 15 MB yang berlaku saat dijalankan sendiri.`;
+  }
+  if (status === 504 || status === 408) {
+    return `Server melebihi batas waktu (HTTP ${status}). Fungsi Vercel berhenti di 60 detik; dokumen besar bisa melampauinya.`;
+  }
+  if (status >= 500) {
+    return `Fungsi server gagal sebelum sempat membalas (HTTP ${status}). Penyebab paling umum: melewati batas waktu 60 detik, atau berkas melebihi batas body ~4,5 MB. Cek Runtime Logs di Vercel. Balasan: ${head}`;
+  }
+  return `Server membalas bukan JSON (HTTP ${status}). Balasan: ${head}`;
+}
+
 export default function HomePage() {
   const { t } = useI18n();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -40,12 +80,19 @@ export default function HomePage() {
     if (!file) return;
     reset();
     setWarnings([]);
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(
+        `${file.name} berukuran ${mb(file.size)} MB, melebihi batas unggah ${mb(MAX_UPLOAD_BYTES)} MB. ` +
+          `Kecilkan PDF-nya, atau ambil hanya halaman yang memuat equipment schedule.`
+      );
+      return;
+    }
     setExtracting(true);
     try {
       const body = new FormData();
       body.append("file", file);
       const res = await fetch("/api/extract", { method: "POST", body });
-      const data = (await res.json()) as ExtractResponse & { error?: string };
+      const data = await readJson<ExtractResponse & { error?: string }>(res);
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setJson(JSON.stringify(data.loads, null, 2));
       setWarnings(data.warnings ?? []);
@@ -66,7 +113,7 @@ export default function HomePage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ loads }),
       });
-      const data = (await res.json()) as GenerateResponse & { error?: string };
+      const data = await readJson<GenerateResponse & { error?: string }>(res);
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setSummary(data.summary ?? []);
       setFiles(data.files ?? []);

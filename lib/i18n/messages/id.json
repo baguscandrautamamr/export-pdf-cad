@@ -18,7 +18,7 @@
   "home.subheading": "Unggah equipment schedule, periksa hasil ekstraksi, lalu generate berkas.",
 
   "step.1.title": "1. Unggah dokumen",
-  "step.1.desc": "PDF atau foto equipment schedule. Maksimal 15 MB.",
+  "step.1.desc": "PDF atau foto equipment schedule. Maksimal 4 MB.",
   "step.1.choose": "Pilih berkas",
   "step.1.extract": "Ekstrak dengan AI",
   "step.1.extracting": "Mengekstrak…",
