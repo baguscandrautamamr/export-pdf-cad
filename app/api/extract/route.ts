@@ -7,6 +7,7 @@ import {
   type ContentBlock,
 } from "@/lib/olagon-client";
 import { EXTRACTION_SYSTEM_PROMPT, EXTRACTION_USER_INSTRUCTION } from "@/lib/prompts";
+import { collectWarnings } from "@/lib/validate";
 import type { LoadsFile } from "@/types/loads";
 
 export const runtime = "nodejs";
@@ -72,56 +73,18 @@ export async function POST(req: Request) {
   ];
 
   let loads: LoadsFile;
+  let stats;
   try {
-    const text = await callOlagon({ system: EXTRACTION_SYSTEM_PROMPT, content });
-    loads = parseJsonFromModel<LoadsFile>(text);
+    const reply = await callOlagon({ system: EXTRACTION_SYSTEM_PROMPT, content });
+    stats = reply.stats;
+    loads = parseJsonFromModel<LoadsFile>(reply.text);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Ekstraksi gagal";
     return NextResponse.json({ error: message }, { status: 502 });
   }
 
-  return NextResponse.json({ loads, warnings: collectWarnings(loads) });
-}
-
-/**
- * Surfaces everything a human has to look at before the numbers turn into
- * breaker ratings. Extraction is the only AI step in the pipeline and also the
- * only one that can be wrong in a way the deterministic code cannot detect.
- */
-function collectWarnings(data: LoadsFile): string[] {
-  const warnings: string[] = [];
-
-  if (!data || typeof data !== "object") return ["Hasil ekstraksi bukan objek yang valid"];
-  if (!data.panel?.name?.trim()) warnings.push("panel.name kosong — wajib diisi manual");
-  if (!Array.isArray(data.loads) || data.loads.length === 0) {
-    warnings.push("Tidak ada load yang terbaca");
-    return warnings;
-  }
-
-  data.loads.forEach((l, i) => {
-    const where = `Load #${i + 1} (${l?.tag || "tanpa tag"})`;
-    if (l?.remark && /ambigu/i.test(l.remark)) {
-      warnings.push(`${where}: ${l.remark}`);
-    }
-    if (!l?.tag?.trim()) warnings.push(`${where}: tag kosong`);
-    if (typeof l?.watt !== "number" || !Number.isFinite(l.watt) || l.watt <= 0) {
-      warnings.push(`${where}: watt tidak valid (${String(l?.watt)})`);
-    } else if (l.watt < 10) {
-      // Below ~10 W the number is almost always a kW figure that never got scaled.
-      warnings.push(`${where}: watt sangat kecil (${l.watt} W) — cek apakah nilainya masih dalam kW`);
-    } else if (l.watt > 200_000) {
-      warnings.push(`${where}: watt sangat besar (${l.watt} W) — cek per-unit vs total`);
-    }
-    if (l?.phase !== 1 && l?.phase !== 3) {
-      warnings.push(`${where}: phase harus 1 atau 3 (terbaca: ${String(l?.phase)})`);
-    }
-    if (l?.qty !== undefined && (!Number.isInteger(l.qty) || l.qty < 1)) {
-      warnings.push(`${where}: qty tidak valid (${String(l.qty)})`);
-    }
-    if (/fan|pump|compressor|outdoor|blower|ahu/i.test(`${l?.tag ?? ""} ${l?.desc ?? ""}`) && !l?.motor) {
-      warnings.push(`${where}: terlihat seperti motor tapi motor:false — cek sizing breaker`);
-    }
-  });
-
-  return warnings;
+  // Returned on success too, so a call that only just made it inside the budget
+  // is visible before it starts failing — the run before the first timeout is
+  // the one that would have warned you.
+  return NextResponse.json({ loads, warnings: collectWarnings(loads), stats });
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHash, timingSafeEqual } from "node:crypto";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -7,13 +8,23 @@ export const dynamic = "force-dynamic";
  * Read-only report of what the running server sees, for diagnosing a login that
  * fails on a deployment you cannot attach a debugger to.
  *
- * Deliberately public: it has to answer precisely when signing in does not
- * work, so requiring a session would defeat it. It therefore reports only
- * whether things are set, never what they are — no secret, no password, no
- * hash, not even the configured username. The commit is the useful part: it
- * says which build is actually live, which is the question that env-var and
+ * The report is in two tiers, because the two halves have very different costs.
+ *
+ * The always-public tier says only whether things are set, never what they are.
+ * It has to stay reachable without a session — the failure it exists to explain
+ * is precisely "I cannot sign in" — and it is safe to, because nothing in it
+ * narrows a guess at the credentials. The commit is the useful part: it says
+ * which build is actually live, which is the question that env-var and
  * code-version confusion always comes down to.
+ *
+ * The shape tier describes the configured username and password closely enough
+ * to spot a typo, and that is exactly why it cannot be public: "4 characters,
+ * all lowercase letters, stored as plaintext" turns an unbounded guess into a
+ * very short list. It is served only outside production, or in production to a
+ * caller that presents AUTH_STATUS_TOKEN — so the deployment operator keeps the
+ * diagnostic and a passer-by gets nothing that helps them.
  */
+
 /**
  * Enough about a value to spot a typo, not enough to reveal it: how long it is,
  * whether it survived quoting or whitespace, and what kind of characters it
@@ -35,7 +46,31 @@ function describeShape(raw: string | undefined) {
   };
 }
 
-export async function GET() {
+/**
+ * Whether this caller may see the shape tier.
+ *
+ * Outside production it is always allowed — a dev server holds no credential
+ * worth protecting, and needing a token there would just get in the way. In
+ * production it takes ?token=<AUTH_STATUS_TOKEN>, compared over digests so
+ * neither the token nor its length leaks through timing. With the variable
+ * unset, production simply never serves the shape tier.
+ */
+function maySeeShapes(req: Request): boolean {
+  if (process.env.NODE_ENV !== "production") return true;
+
+  const expected = process.env.AUTH_STATUS_TOKEN?.trim();
+  if (!expected) return false;
+
+  const provided = new URL(req.url).searchParams.get("token")?.trim();
+  if (!provided) return false;
+
+  const a = createHash("sha256").update(expected, "utf8").digest();
+  const b = createHash("sha256").update(provided, "utf8").digest();
+  return timingSafeEqual(a, b);
+}
+
+export async function GET(req: Request) {
+  const shapesVisible = maySeeShapes(req);
   const hash = process.env.DEMO_USER_PASSWORD_HASH?.trim();
   const plain = process.env.DEMO_USER_PASSWORD?.trim();
   const hashUsable = !!hash && /^\$2[aby]?\$\d{2}\$/.test(hash);
@@ -63,8 +98,16 @@ export async function GET() {
     // marks these Sensitive and will not show them again, so when sign-in is
     // refused with the configuration apparently correct, this is what
     // distinguishes user from "user", User, or user with a stray character.
-    demoEmail: describeShape(process.env.DEMO_USER_EMAIL),
-    demoPassword: describeShape(process.env.DEMO_USER_PASSWORD),
+    //
+    // Withheld in production without a token: see maySeeShapes(). The field
+    // stays present either way so a caller can tell "withheld" apart from an
+    // older build that never had it.
+    shapesVisible,
+    demoEmail: shapesVisible ? describeShape(process.env.DEMO_USER_EMAIL) : null,
+    demoPassword: shapesVisible ? describeShape(process.env.DEMO_USER_PASSWORD) : null,
+    shapesHint: shapesVisible
+      ? undefined
+      : "Set AUTH_STATUS_TOKEN di environment, lalu panggil /api/auth-status?token=<nilainya>",
 
     // Present only in builds that carry the plaintext-password support. If this
     // is false, the deployment predates it and DEMO_USER_PASSWORD is ignored.

@@ -6,7 +6,7 @@ breaker selection, same totals. Import it, don't reimplement it.
 """
 import json, math, os, re
 
-SQRT3 = 1.732
+SQRT3 = math.sqrt(3)
 
 # IEC 60947-2 / 60898 preferred ratings. Selection always rounds UP to one of these.
 STD_BREAKER = [6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160,
@@ -37,6 +37,50 @@ def std_breaker(amps, minimum=6):
     return STD_BREAKER[-1]
 
 
+def ca_xlpe(ambient_c):
+    """Ambient correction factor Ca for XLPE, from CA_XLPE.
+
+    Interpolates linearly between tabulated points, so 42 C gets a factor
+    between the 40 C and 45 C rows instead of being truncated onto one of them.
+
+    Outside the table the two directions are not symmetrical, because only one
+    of them is dangerous:
+
+    * Below 25 C the true factor keeps rising above 1.02. Clamping to 1.02
+      simply declines to claim the extra capacity - the cable comes out no
+      smaller than the table justifies, which is the safe direction.
+    * Above 55 C the true factor keeps falling (roughly 0.71 at 60 C), so
+      reusing the last tabulated value would overstate what the cable can carry
+      and undersize it. Refuse instead: a wrong cable size is a safety issue,
+      and an installation genuinely at 60 C ambient needs a derating table this
+      module does not carry.
+    """
+    try:
+        t = float(ambient_c)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"system.ambient_c harus berupa angka (terbaca: {ambient_c!r})"
+        ) from None
+
+    points = sorted(CA_XLPE)
+    lo, hi = points[0], points[-1]
+    if t <= lo:
+        return CA_XLPE[lo]
+    if t > hi:
+        raise ValueError(
+            f"system.ambient_c = {t:g} C di luar tabel derating (maks {hi} C). "
+            f"IEC 60364-5-52 Tabel B.52.14 berhenti di {hi} C; di atas itu faktor "
+            f"koreksinya turun terus, jadi memakai nilai terakhir akan membuat "
+            f"kabel undersized. Pakai tabel derating pabrikan untuk ambient ini."
+        )
+
+    for a, b in zip(points, points[1:]):
+        if a <= t <= b:
+            span = b - a
+            return CA_XLPE[a] + (CA_XLPE[b] - CA_XLPE[a]) * (t - a) / span
+    return CA_XLPE[hi]  # unreachable: t is within [lo, hi] above
+
+
 def load_config(path):
     with open(path, encoding='utf-8') as f:
         cfg = json.load(f)
@@ -55,9 +99,69 @@ def load_config(path):
     sysd.setdefault('min_cable_mm2', 4)      # practical minimum for a panel outgoing
     sysd.setdefault('motor_pf', 0.85)    # typical LV induction motor
     sysd.setdefault('motor_eff', 0.88)
-    sysd.setdefault('ca', CA_XLPE.get(int(sysd['ambient_c']), 0.91))
+    sysd.setdefault('ca', ca_xlpe(sysd['ambient_c']))
     cfg.setdefault('panel', {})
+    validate_loads(cfg)
     return cfg
+
+
+def validate_loads(cfg):
+    """Reject a loads.json the builders cannot process, naming every problem.
+
+    Everything downstream indexes into these fields directly, so a missing
+    'watt' surfaces as KeyError, a stray phase 2 leaves every phase empty and
+    divides by zero, and a watt that arrived as a string fails on unary minus
+    inside the sort. None of those say what to fix, and all of them are
+    reachable: the review step in the web app exists specifically so a human can
+    hand-edit this JSON before it is built.
+
+    The web app validates first and reports in the browser (lib/validate.ts);
+    this is the second line, covering the CLI, the serverless function, and any
+    other caller of load_config(). Both list every problem at once rather than
+    stopping at the first - a hand-edited file usually has more than one.
+    """
+    problems = []
+
+    if not (cfg.get('panel') or {}).get('name', '').strip():
+        problems.append("panel.name wajib diisi")
+
+    loads = cfg.get('loads')
+    if not isinstance(loads, list) or not loads:
+        problems.append("loads harus berupa daftar berisi minimal satu item")
+        raise ValueError(_problem_text(problems))
+
+    for i, it in enumerate(loads, start=1):
+        where = f"Load #{i}"
+        if not isinstance(it, dict):
+            problems.append(f"{where}: harus berupa objek")
+            continue
+
+        tag = it.get('tag')
+        where = f"Load #{i} ({tag})" if isinstance(tag, str) and tag.strip() else where
+        if not isinstance(tag, str) or not tag.strip():
+            problems.append(f"{where}: 'tag' wajib diisi")
+
+        watt = it.get('watt')
+        if isinstance(watt, bool) or not isinstance(watt, (int, float)):
+            problems.append(f"{where}: 'watt' harus berupa angka (terbaca: {watt!r})")
+        elif not math.isfinite(watt) or watt <= 0:
+            problems.append(f"{where}: 'watt' harus lebih besar dari 0 (terbaca: {watt!r})")
+
+        phase = it.get('phase', 1)
+        if phase not in (1, 3):
+            problems.append(f"{where}: 'phase' harus 1 atau 3 (terbaca: {phase!r})")
+
+        qty = it.get('qty', 1)
+        if isinstance(qty, bool) or not isinstance(qty, int) or qty < 1:
+            problems.append(f"{where}: 'qty' harus bilangan bulat >= 1 (terbaca: {qty!r})")
+
+    if problems:
+        raise ValueError(_problem_text(problems))
+
+
+def _problem_text(problems):
+    head = f"loads.json tidak valid ({len(problems)} masalah):"
+    return "\n".join([head] + [f"  - {p}" for p in problems])
 
 
 def expand(loads):
@@ -97,6 +201,30 @@ def balance(rows):
     return load
 
 
+def pick_cable(iz_needed, k, floor, tag, rating):
+    """Smallest tabulated size whose derated Iz carries iz_needed.
+
+    Raises rather than returning None when nothing fits. The table stops at
+    400 mm2, so a single load big enough to exhaust it is real - and the bare
+    StopIteration that a generator expression used to raise here carried no
+    message at all, which surfaced in the web app as "Generate gagal:
+    StopIteration:" with nothing after the colon.
+    """
+    for s in sorted(IZ_CU_XLPE_E):
+        if s >= floor and IZ_CU_XLPE_E[s] * k >= iz_needed:
+            return s
+
+    largest = max(IZ_CU_XLPE_E)
+    raise ValueError(
+        f"Load '{tag}': tidak ada ukuran kabel tunggal yang cukup untuk breaker "
+        f"{rating} A (butuh Iz {iz_needed:.0f} A, terbesar di tabel "
+        f"{fmt_mm2(largest)} mm2 = {IZ_CU_XLPE_E[largest] * k:.0f} A setelah derating). "
+        f"Load sebesar ini biasanya berupa sub-panel tersendiri, bukan satu "
+        f"outgoing circuit - pecah jadi beberapa circuit, atau beri feeder "
+        f"paralel dan modelkan sebagai panel terpisah."
+    )
+
+
 def size_circuit(r, sysd):
     """Breaker + outgoing cable for one circuit.
 
@@ -112,6 +240,11 @@ def size_circuit(r, sysd):
     start. The 1.25 factor then covers starting; the overload relay inside the DOL
     starter - not the breaker - provides the motor's thermal protection.
 
+    A 3-phase load counts as a motor unless it says otherwise ("motor": false),
+    because on an equipment schedule almost every 3-phase item is one. The
+    default costs a non-motor load a size or two of breaker; the opposite
+    default would undersize a real motor's protection, which trips on start.
+
     Outgoing cables are derated for grouping (cg_out) because circuits leaving a
     panel are bunched together on the same tray, which is exactly the condition
     the grouping factor exists for, then sized a further cable_headroom above the
@@ -124,6 +257,7 @@ def size_circuit(r, sysd):
     k = sysd['ca'] * sysd['cg_out']
     need = lambda rating: rating * sysd['cable_headroom']
     floor = sysd['min_cable_mm2']
+    pick = lambda rating: pick_cable(need(rating), k, floor, r['tag'], rating)
     if p == 3:
         r['amp'] = w / (sysd['voltage_ll'] * SQRT3 * sysd['pf'])
         r['motor'] = bool(r.get('motor', True))
@@ -133,16 +267,14 @@ def size_circuit(r, sysd):
         else:
             rating = std_breaker(r['amp'] * 1.25, 16)
         r['breaker'] = f"{'MCCB' if rating >= 32 else 'MCB'} 3P, {rating}A"
-        mm2 = next(s for s in sorted(IZ_CU_XLPE_E)
-                   if s >= floor and IZ_CU_XLPE_E[s] * k >= need(rating))
+        mm2 = pick(rating)
         r['cable'] = f"NYY 5C x {fmt_mm2(mm2)}mm2"
     else:
         r['amp'] = w / sysd['voltage_ln']
         r['motor'] = False
         rating = std_breaker(r['amp'] * 1.25, sysd['min_mcb_1p'])
         r['breaker'] = f"MCB 1P, {rating}A"
-        mm2 = next(s for s in sorted(IZ_CU_XLPE_E)
-                   if s >= floor and IZ_CU_XLPE_E[s] * k >= need(rating))
+        mm2 = pick(rating)
         r['cable'] = f"NYY 3C x {fmt_mm2(mm2)}mm2"
     r['breaker_rating'] = rating
     r['cable_mm2'] = mm2
@@ -173,7 +305,12 @@ def build(cfg):
     design = amp * 1.1
     incoming = std_breaker(design, 16)
     mx, mn = max(phase_w.values()), min(phase_w.values())
-    imbalance = (mx - mn) / (sum(phase_w.values()) / 3) if total_w else 0.0
+    # Guard on the divisor itself, not on total_w: the two came apart when a
+    # phase outside (1, 3) slipped through, which put watts in total_w while
+    # leaving every phase empty. validate_loads() rejects that now, so this is
+    # belt and braces for callers that build a cfg without going through it.
+    mean_w = sum(phase_w.values()) / 3
+    imbalance = (mx - mn) / mean_w if mean_w else 0.0
 
     res = dict(rows=rows, phase_w=phase_w, single=single, total_w=total_w, va=va,
                amp=amp, design=design, incoming=incoming, imbalance=imbalance,

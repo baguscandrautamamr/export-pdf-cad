@@ -6,6 +6,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { authOptions } from "@/lib/auth";
+import { validateLoads } from "@/lib/validate";
 import type { LoadsFile } from "@/types/loads";
 
 export const runtime = "nodejs";
@@ -40,11 +41,16 @@ export async function POST(req: Request) {
     );
   }
 
-  if (!loads.panel?.name?.trim()) {
-    return NextResponse.json({ error: "panel.name wajib diisi" }, { status: 400 });
-  }
-  if (!Array.isArray(loads.loads) || loads.loads.length === 0) {
-    return NextResponse.json({ error: "loads harus berisi minimal satu item" }, { status: 400 });
+  // Every field below is one the Python builders index into directly, so
+  // checking here is what turns "KeyError: 'watt'" into a list naming the rows
+  // to fix. The JSON arrives from a textarea the user is meant to edit by hand,
+  // which makes malformed input the expected case rather than an odd one.
+  const problems = validateLoads(loads);
+  if (problems.length > 0) {
+    return NextResponse.json(
+      { error: `loads.json tidak valid:\n${problems.map((p) => `• ${p}`).join("\n")}`, problems },
+      { status: 400 }
+    );
   }
 
   // Vercel's Node runtime has no python3, so there the builders live in a
@@ -100,7 +106,14 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ summary, files });
   } catch (err) {
-    return NextResponse.json({ error: describe(err) }, { status: 500 });
+    // The builders exit 2 for a rejected loads.json — a caller error, not a
+    // server fault. validateLoads() above catches most of these first, but the
+    // Python side also rejects things this route does not model, such as an
+    // ambient temperature outside the derating table.
+    return NextResponse.json(
+      { error: describe(err) },
+      { status: isRejectedInput(err) ? 400 : 500 }
+    );
   } finally {
     await fs.rm(tmpdir, { recursive: true, force: true }).catch(() => {});
   }
@@ -161,6 +174,20 @@ async function proxyToPythonService(url: string, loads: LoadsFile) {
   }
 }
 
+/**
+ * Whether the builders rejected the input rather than failing.
+ *
+ * They exit 2 for that case. execFile reports a non-zero exit in the same
+ * `code` field it uses for spawn errors like "ENOENT", as a number rather than
+ * a string — which NodeJS.ErrnoException types as string-only, hence the local
+ * widening here.
+ */
+const REJECTED_INPUT_EXIT = 2;
+
+function isRejectedInput(err: unknown): boolean {
+  return (err as { code?: string | number })?.code === REJECTED_INPUT_EXIT;
+}
+
 function describe(err: unknown): string {
   const e = err as NodeJS.ErrnoException & { stderr?: string; killed?: boolean };
   if (e?.code === "ENOENT") {
@@ -168,6 +195,11 @@ function describe(err: unknown): string {
   }
   if (e?.killed || e?.name === "TimeoutError") return "Script Python melebihi batas waktu";
   const stderr = e?.stderr?.trim();
+  // Exit 2 is a rejected loads.json, and the builders print the reason on its
+  // own — wrapping it in "Script Python gagal" would only make it read like a
+  // crash. Anything else is a real failure and keeps the prefix and a tail of
+  // the traceback.
+  if (stderr && isRejectedInput(err)) return stderr;
   if (stderr) return `Script Python gagal: ${stderr.split("\n").slice(-6).join("\n")}`;
   return err instanceof Error ? err.message : "Generate gagal";
 }

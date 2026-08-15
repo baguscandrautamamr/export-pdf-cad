@@ -259,6 +259,17 @@ def make(cfg, outdir):
     return base
 
 
+def main():
+    # A ValueError here is a rejected loads.json, not a bug: print what is wrong
+    # and exit, rather than letting a traceback bury the message. /api/generate
+    # shows the last few stderr lines, so those lines have to be the useful ones.
+    try:
+        cfg = load_config(sys.argv[1])
+        make(cfg, sys.argv[2] if len(sys.argv) > 2 else '.')
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        sys.exit(2)
+
+
 if __name__ == '__main__':
-    cfg = load_config(sys.argv[1])
-    make(cfg, sys.argv[2] if len(sys.argv) > 2 else '.')
+    main()

@@ -130,8 +130,13 @@ export default function HomePage() {
     const a = document.createElement("a");
     a.href = url;
     a.download = f.name;
+    // In the document and revoked on a later tick: click() only *starts* the
+    // download, and Firefox reads the blob afterwards — revoking in the same
+    // tick cancels the save with no error anywhere.
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
 
   return (
