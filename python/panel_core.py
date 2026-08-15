@@ -144,8 +144,19 @@ def validate_loads(cfg):
         watt = it.get('watt')
         if isinstance(watt, bool) or not isinstance(watt, (int, float)):
             problems.append(f"{where}: 'watt' harus berupa angka (terbaca: {watt!r})")
-        elif not math.isfinite(watt) or watt <= 0:
-            problems.append(f"{where}: 'watt' harus lebih besar dari 0 (terbaca: {watt!r})")
+        elif not math.isfinite(watt):
+            problems.append(f"{where}: 'watt' harus berupa angka terhingga (terbaca: {watt!r})")
+        elif watt == 0:
+            # See lib/validate.ts: a zero here is almost always extraction
+            # reporting an unreadable kW column, or a group-heading row that was
+            # never a load. Both are fixed by editing the file, not by rerunning.
+            problems.append(
+                f"{where}: daya 0 W. Biasanya kolom kW baris ini tidak terbaca saat "
+                f"ekstraksi - isi angkanya dari drawing, atau hapus barisnya kalau itu "
+                f"baris judul kelompok dan bukan load yang punya breaker sendiri."
+            )
+        elif watt < 0:
+            problems.append(f"{where}: 'watt' tidak boleh negatif (terbaca: {watt!r})")
 
         phase = it.get('phase', 1)
         if phase not in (1, 3):
