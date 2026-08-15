@@ -25,11 +25,13 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [detail, setDetail] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    setDetail("");
     setLoading(true);
     const res = await signIn("credentials", { email, password, redirect: false });
     if (res?.ok) {
@@ -43,6 +45,11 @@ function LoginForm() {
     }
     setLoading(false);
     setError(t("login.error"));
+    // NextAuth reports "CredentialsSignin" when authorize() rejected the
+    // credentials, and something else entirely for a misconfiguration. Showing
+    // the raw code turns "wrong password" into an answerable question — it
+    // names no secret, only which branch failed.
+    setDetail([res?.error, res?.status].filter(Boolean).join(" · "));
   }
 
   return (
@@ -83,6 +90,11 @@ function LoginForm() {
         {error ? (
           <div className="notice notice--error" role="alert" style={{ marginBottom: 12 }}>
             {error}
+            {detail ? (
+              <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                {detail}
+              </div>
+            ) : null}
           </div>
         ) : null}
         <button type="submit" className="glass-button glass-button--primary" disabled={loading}>

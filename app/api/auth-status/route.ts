@@ -14,6 +14,27 @@ export const dynamic = "force-dynamic";
  * says which build is actually live, which is the question that env-var and
  * code-version confusion always comes down to.
  */
+/**
+ * Enough about a value to spot a typo, not enough to reveal it: how long it is,
+ * whether it survived quoting or whitespace, and what kind of characters it
+ * holds. A four-character all-lowercase-letter value with no quotes and no
+ * whitespace is consistent with "user"; six characters means the quotes were
+ * stored too; a capital shows up as isLowercase false.
+ */
+function describeShape(raw: string | undefined) {
+  if (raw === undefined) return { set: false };
+  const trimmed = raw.trim();
+  return {
+    set: true,
+    length: trimmed.length,
+    lengthBeforeTrim: raw.length,
+    isLowercase: trimmed === trimmed.toLowerCase(),
+    onlyLetters: /^[a-z]+$/i.test(trimmed),
+    hasQuotes: /^["']|["']$/.test(trimmed),
+    hasInnerWhitespace: /\s/.test(trimmed),
+  };
+}
+
 export async function GET() {
   const hash = process.env.DEMO_USER_PASSWORD_HASH?.trim();
   const plain = process.env.DEMO_USER_PASSWORD?.trim();
@@ -37,6 +58,13 @@ export async function GET() {
     demoEmailSet: !!process.env.DEMO_USER_EMAIL?.trim(),
     passwordSource: hashUsable ? "bcrypt" : plain ? "plaintext" : "none",
     passwordHashPresentButUnreadable: !!hash && !hashUsable,
+
+    // Shape of the configured values, never the values themselves. A dashboard
+    // marks these Sensitive and will not show them again, so when sign-in is
+    // refused with the configuration apparently correct, this is what
+    // distinguishes user from "user", User, or user with a stray character.
+    demoEmail: describeShape(process.env.DEMO_USER_EMAIL),
+    demoPassword: describeShape(process.env.DEMO_USER_PASSWORD),
 
     // Present only in builds that carry the plaintext-password support. If this
     // is false, the deployment predates it and DEMO_USER_PASSWORD is ignored.
