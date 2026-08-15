@@ -11,10 +11,27 @@ import { useI18n } from "@/lib/i18n/I18nContext";
  * callbackUrl arrives from the query string, so treat it as untrusted: allow a
  * same-site path and nothing else, or an attacker can turn the login page into
  * an open redirect by linking to /login?callbackUrl=https://elsewhere.
+ *
+ * Resolving it with the same parser the browser uses is the only check that
+ * cannot disagree with the browser. Prefix tests can: "/\evil.com" starts with
+ * a single "/" and so passes a startsWith("//") guard, but WHATWG URL parsing
+ * treats a backslash as a slash, and location.assign() sends it to evil.com.
+ * Anything that lands outside the placeholder origin — an absolute URL, a
+ * protocol-relative one, a backslash spelling of either — is refused here.
  */
+const PLACEHOLDER_ORIGIN = "https://callback.invalid";
+
 function safeCallback(raw: string): string {
-  if (!raw.startsWith("/") || raw.startsWith("//")) return "/";
-  return raw;
+  let url: URL;
+  try {
+    url = new URL(raw, PLACEHOLDER_ORIGIN);
+  } catch {
+    return "/";
+  }
+  if (url.origin !== PLACEHOLDER_ORIGIN) return "/";
+  // Rebuild from the parsed parts rather than returning the caller's string, so
+  // what gets navigated to is exactly what was just checked.
+  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 function LoginForm() {
