@@ -27,7 +27,12 @@ export async function GET() {
 
     nextAuthSecretSet: !!process.env.NEXTAUTH_SECRET,
     nextAuthUrlSet: !!url,
-    nextAuthUrlProtocol: url ? url.split(":")[0] : null,
+    // Must be "https" on a deployed site. Anything else — most often the
+    // protocol missing altogether — means NextAuth's handler and getToken can
+    // disagree about cookie names. The middleware no longer depends on this,
+    // but it still affects callback and redirect URLs, so it is worth seeing.
+    nextAuthUrlProtocol: url ? (url.match(/^([a-z][a-z0-9+.-]*):\/\//i)?.[1] ?? null) : null,
+    nextAuthUrlHasProtocol: !!url && /^[a-z][a-z0-9+.-]*:\/\//i.test(url),
 
     demoEmailSet: !!process.env.DEMO_USER_EMAIL?.trim(),
     passwordSource: hashUsable ? "bcrypt" : plain ? "plaintext" : "none",
